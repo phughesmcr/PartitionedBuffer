@@ -194,40 +194,6 @@ Deno.bench({
   },
 });
 
-// Comparison with Native TypedArrays
-Deno.bench({
-  name: "Native - Create and write Int32Array",
-  baseline: true,
-  group: "array_comparison",
-  fn: () => {
-    const array = new Int32Array(16);
-    for (let i = 0; i < 16; i++) {
-      array[i] = i;
-    }
-  },
-});
-
-Deno.bench({
-  name: "PartitionedBuffer - Create and write Int32Array",
-  group: "array_comparison",
-  fn: () => {
-    const buffer = new PartitionedBuffer(1024, 16);
-    type Schema = { value: number };
-    const spec: PartitionSpec<Schema> = {
-      name: "int32",
-      schema: {
-        value: Int32Array,
-      },
-    };
-    const partition = buffer.addPartition(new Partition(spec));
-    if (!partition) return;
-
-    for (let i = 0; i < 16; i++) {
-      partition.partitions.value[i] = i;
-    }
-  },
-});
-
 // Alignment Tests
 Deno.bench({
   name: "PartitionedBuffer - Mixed alignment access",
@@ -475,38 +441,6 @@ Deno.bench({
     for (let i = 0; i < 16; i++) sourceData[i] = i;
 
     partition.partitions.value.set(sourceData);
-  },
-});
-
-// Comparison with Different TypedArrays
-Deno.bench({
-  name: "Native - Float64Array operations",
-  group: "type_comparison",
-  baseline: true,
-  fn: () => {
-    const array = new Float64Array(16);
-    for (let i = 0; i < 16; i++) {
-      array[i] = Math.sqrt(i);
-    }
-  },
-});
-
-Deno.bench({
-  name: "PartitionedBuffer - Float64Array operations",
-  group: "type_comparison",
-  fn: () => {
-    const buffer = new PartitionedBuffer(1024, 16);
-    type Schema = { value: number };
-    const spec: PartitionSpec<Schema> = {
-      name: "float64",
-      schema: { value: Float64Array },
-    };
-    const partition = buffer.addPartition(new Partition(spec));
-    if (!partition) return;
-
-    for (let i = 0; i < 16; i++) {
-      partition.partitions.value[i] = Math.sqrt(i);
-    }
   },
 });
 
