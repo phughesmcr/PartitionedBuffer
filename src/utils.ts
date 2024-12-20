@@ -172,6 +172,7 @@ export const isValidTypedArrayValue = (
  * @returns the zeroed array
  */
 export function zeroArray<T extends TypedArray>(array: T): T {
+  delete array[-1]; // will dispose of a SparseFacade while having no effect on other typed arrays
   array.fill(0);
   return array;
 }
