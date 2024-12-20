@@ -1,0 +1,52 @@
+{
+  "name": "@phughesmcr/partitionedbuffer",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": "./mod.ts",
+  "bench": {
+    "include": ["bench/**/*.bench.ts"]
+  },
+  "compilerOptions": {
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "lib": ["deno.ns", "dom", "esnext"],
+    "noErrorTruncation": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true
+  },
+  "exclude": ["example/**/*.ts"],
+  "fmt": {
+    "indentWidth": 2,
+    "lineWidth": 120,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "always",
+    "useTabs": false,
+    "exclude": ["*.md", "LICENSE"]
+  },
+  "imports": {
+    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.1.0",
+    "@std/assert": "jsr:@std/assert@^1.0.9"
+  },
+  "tasks": {
+    "example": {
+      "description": "Run the example",
+      "command": "deno run example/PartitionedBuffer.example.ts"
+    },
+    "prep": {
+      "description": "Format, lint, and check the codebase",
+      "command": "deno fmt && deno lint && deno check mod.ts src/**/*.ts"
+    }
+  },
+  "test": {
+    "include": ["test/**/*.test.ts"]
+  }
+}
