@@ -1,3 +1,14 @@
+/** @returns `true` if ```typeof n === 'number'``` */
+export const isNumber = (n: unknown): n is number => typeof n === "number";
+
+/** @returns `true` if n is a number, >= 0, <= 2^32 - 1 (4294967295)*/
+export const isUint32 = (n: number): n is number => {
+  return isNumber(n) && !isNaN(n) && n >= 0 && n <= 4294967295;
+};
+
+/** @returns true if `n` is a Uint32 > 0 */
+export const isPositiveUint32 = (n: number): n is number => isUint32(n) && n > 0;
+
 /** All the various kinds of typed arrays */
 export type TypedArray =
   | Int8Array
@@ -149,3 +160,13 @@ export const isValidTypedArrayValue = (
       return false;
   }
 };
+
+/**
+ * Zero out a typed array
+ * @param array the array to zero out
+ * @returns the zeroed array
+ */
+export function zeroArray<T extends TypedArray>(array: T): T {
+  array.fill(0);
+  return array;
+}

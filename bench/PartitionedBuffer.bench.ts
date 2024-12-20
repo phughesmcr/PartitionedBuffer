@@ -1,5 +1,5 @@
 import { PartitionedBuffer } from "../src/PartitionedBuffer.ts";
-import type { PartitionSpec } from "../src/Partition.ts";
+import { Partition, type PartitionSpec } from "../src/Partition.ts";
 
 // Buffer Creation Benchmarks
 Deno.bench({
@@ -35,7 +35,7 @@ Deno.bench({
         value: Int8Array,
       },
     };
-    buffer.addPartition(spec);
+    buffer.addPartition(new Partition(spec));
   },
 });
 
@@ -50,7 +50,7 @@ Deno.bench({
         value: Float64Array,
       },
     };
-    buffer.addPartition(spec);
+    buffer.addPartition(new Partition(spec));
   },
 });
 
@@ -75,7 +75,7 @@ Deno.bench({
         float64: Float64Array,
       },
     };
-    buffer.addPartition(spec);
+    buffer.addPartition(new Partition(spec));
   },
 });
 
@@ -91,7 +91,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -111,7 +111,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     let sum = 0;
@@ -132,7 +132,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -154,7 +154,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    buffer.addPartition(spec);
+    buffer.addPartition(new Partition(spec));
     buffer.clear();
   },
 });
@@ -171,7 +171,8 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    buffer.addPartition(spec);
+    const partition = new Partition(spec);
+    buffer.addPartition(partition);
     buffer.getPartition("test");
   },
 });
@@ -187,8 +188,9 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    buffer.addPartition(spec);
-    buffer.getPartition(spec);
+    const partition = new Partition(spec);
+    buffer.addPartition(partition);
+    buffer.getPartition(partition);
   },
 });
 
@@ -217,7 +219,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -246,7 +248,7 @@ Deno.bench({
         float64: Float64Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -271,7 +273,7 @@ Deno.bench({
       },
       maxOwners: 4,
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 4; i++) {
@@ -296,7 +298,7 @@ Deno.bench({
         },
       };
       try {
-        buffer.addPartition(spec);
+        buffer.addPartition(new Partition(spec));
         partitionCount++;
       } catch {
         break;
@@ -316,7 +318,7 @@ Deno.bench({
         value: Int8Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (partition) {
       partition.partitions.value[0] = 1;
       partition.partitions.value[7] = 1; // Last element
@@ -335,9 +337,10 @@ Deno.bench({
         value: Int32Array,
       },
     };
+    const partition = new Partition(spec);
 
     for (let i = 0; i < 10; i++) {
-      buffer.addPartition(spec);
+      buffer.addPartition(partition);
       buffer.clear();
     }
   },
@@ -347,7 +350,7 @@ Deno.bench({
 Deno.bench({
   name: "PartitionedBuffer - Sequential partition operations",
   fn: () => {
-    const buffer = new PartitionedBuffer(1024, 16);
+    const buffer = new PartitionedBuffer(1024 * 2, 16); // Doubled buffer size
     type Schema = { value: number };
 
     for (let i = 0; i < 10; i++) {
@@ -357,7 +360,7 @@ Deno.bench({
           value: Int32Array,
         },
       };
-      const partition = buffer.addPartition(spec);
+      const partition = buffer.addPartition(new Partition(spec));
       if (partition) {
         partition.partitions.value[0] = i;
       }
@@ -377,7 +380,7 @@ Deno.bench({
         value: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -401,7 +404,7 @@ Deno.bench({
         name: `part${i}`,
         schema: { value: Int32Array },
       };
-      return buffer.addPartition(spec);
+      return buffer.addPartition(new Partition(spec));
     }).filter((p): p is NonNullable<typeof p> => p !== null);
 
     // Interleaved access across partitions
@@ -423,7 +426,7 @@ Deno.bench({
       name: "cache_friendly",
       schema: { value: Int32Array },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     // Sequential access
@@ -442,7 +445,7 @@ Deno.bench({
       name: "cache_unfriendly",
       schema: { value: Int32Array },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     // Strided access
@@ -465,7 +468,7 @@ Deno.bench({
       name: "bulk",
       schema: { value: Int32Array },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     const sourceData = new Int32Array(16);
@@ -498,7 +501,7 @@ Deno.bench({
       name: "float64",
       schema: { value: Float64Array },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     for (let i = 0; i < 16; i++) {
@@ -520,7 +523,7 @@ Deno.bench({
         b: Int32Array,
       },
     };
-    const partition = buffer.addPartition(spec);
+    const partition = buffer.addPartition(new Partition(spec));
     if (!partition) return;
 
     // Mix of operations

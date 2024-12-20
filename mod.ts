@@ -6,10 +6,12 @@
  */
 
 import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
+import { Partition } from "./src/Partition.ts";
 import type { Schema } from "./src/Schema.ts";
 
 /**
- * PartitionedBuffer is a fast pool of single bits backed by a Uint32Array.
+ * Partition is a convenient way to define an object in a PartitionedBuffer.
+ * PartitionedBuffer is a convenient way to manage a data in ArrayBuffers.
  */
-export { PartitionedBuffer };
+export { Partition, PartitionedBuffer };
 export type { Schema };

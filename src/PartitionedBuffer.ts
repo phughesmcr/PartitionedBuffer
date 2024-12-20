@@ -5,67 +5,80 @@
  * @license     MIT
  */
 
-import type { PartitionSpec, PartitionStorage } from "./Partition.ts";
+import type { Partition, PartitionSpec, PartitionStorage } from "./Partition.ts";
 import type { Schema, SchemaProperty, SchemaSpec } from "./Schema.ts";
 import { sparseFacade } from "./SparseFacade.ts";
-import type { TypedArray, TypedArrayConstructor } from "./utils.ts";
+import {
+  isTypedArrayConstructor,
+  isUint32,
+  isValidTypedArrayValue,
+  type TypedArray,
+  type TypedArrayConstructor,
+  zeroArray,
+} from "./utils.ts";
+
+/** Minimum alignment in bytes for TypedArrays */
+const MIN_ALIGNMENT = 8 as const;
+
+/** Maximum safe partition size to prevent allocation errors */
+const MAX_PARTITION_SIZE = 1073741824 as const; // 1GB (1024 * 1024 * 1024)
+
+/**
+ * Clear all partitions in a buffer
+ * @param partition the partition to clear
+ * @returns the partition
+ */
+function clearAllPartitionArrays<T extends SchemaSpec<T>>(
+  partition: PartitionStorage<T> | null,
+): PartitionStorage<T> | null {
+  if (!partition) return null;
+  Object.values<TypedArray>(partition.partitions).forEach(zeroArray);
+  return partition;
+}
 
 /** A PartitionedBuffer is an ArrayBuffer with named storage partitions. */
 export class PartitionedBuffer extends ArrayBuffer {
-  // A map of all partition names for fast lookup
-  readonly #partitionsByNames: Map<
-    string,
-    PartitionStorage<SchemaSpec<unknown>> | null
-  >;
+  /** The maximum possible number of owners per partition */
+  readonly #maxEntitiesPerPartition: number;
+
+  /** The partitions in the buffer */
+  // deno-lint-ignore no-explicit-any
+  readonly #partitions: Map<Partition<any>, PartitionStorage<any> | null>;
+
+  /** A map of all partition names for fast lookup */
+  // deno-lint-ignore no-explicit-any
+  readonly #partitionsByNames: Map<string, PartitionStorage<any> | null>;
 
   /** The current offset into the underlying ArrayBuffer */
   #offset: number;
-
-  /** The partitions in the buffer */
-  readonly #partitions: Map<
-    PartitionSpec<SchemaSpec<unknown>>,
-    PartitionStorage<SchemaSpec<unknown>> | null
-  >;
-
-  /** The maximum possible number of owners per partition */
-  readonly #maxEntitiesPerPartition: number;
 
   /**
    * Create a new PartitionedBuffer
    * @param size the size of the buffer
    * @param maxEntitiesPerPartition the length of each row in the buffer [min = 8]
-   * @throws {TypeError} if `size` or `maxEntitiesPerPartition` are not numbers
-   * @throws {RangeError} if `size` or `maxEntitiesPerPartition` are not positive safe integers or  `size` is not a multiple of `maxEntitiesPerPartition`
+   * @throws {SyntaxError} if `size` or `maxEntitiesPerPartition` are not numbers
+   *   or if `size` or `maxEntitiesPerPartition` are not positive safe integers
+   *   or if `size` is not a multiple of `maxEntitiesPerPartition`
    */
   constructor(size: number, maxEntitiesPerPartition: number) {
     // Validate size
-    if (typeof size !== "number" || isNaN(size)) {
-      throw new TypeError("size must be a number");
-    }
-    if (!Number.isSafeInteger(size)) {
-      throw new RangeError("size must be a safe integer");
-    }
-    if (size <= 0) {
-      throw new RangeError("size must be positive");
+    if (!isUint32(size)) {
+      throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition and a Uint32 number");
+    } else if (size <= 0) {
+      throw new SyntaxError("size must be > 0");
     }
 
     // Validate maxEntitiesPerPartition
-    if (typeof maxEntitiesPerPartition !== "number" || isNaN(maxEntitiesPerPartition)) {
-      throw new TypeError("maxEntitiesPerPartition must be a number");
-    }
-    if (!Number.isSafeInteger(maxEntitiesPerPartition)) {
-      throw new RangeError("maxEntitiesPerPartition must be a safe integer");
-    }
-    if (maxEntitiesPerPartition <= 0) {
-      throw new RangeError("maxEntitiesPerPartition must be positive");
-    }
-    if (maxEntitiesPerPartition < 8) {
-      throw new RangeError(
+    if (!isUint32(maxEntitiesPerPartition)) {
+      throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
+    } else if (maxEntitiesPerPartition <= 0) {
+      throw new SyntaxError("maxEntitiesPerPartition must be > 0");
+    } else if (maxEntitiesPerPartition < 8) {
+      throw new SyntaxError(
         "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
       );
-    }
-    if (size % maxEntitiesPerPartition !== 0) {
-      throw new RangeError("size must be a multiple of maxEntitiesPerPartition");
+    } else if (size % maxEntitiesPerPartition !== 0) {
+      throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition");
     }
 
     super(size);
@@ -81,14 +94,27 @@ export class PartitionedBuffer extends ArrayBuffer {
   }
 
   #alignOffset(alignment: number): void {
-    // Bitwise alignment is faster than Math.ceil
-    this.#offset = (this.#offset + alignment - 1) & ~(alignment - 1);
+    const oldOffset = this.#offset;
+    // Ensure minimum alignment and power of 2
+    alignment = Math.max(alignment, MIN_ALIGNMENT);
+    if ((alignment & (alignment - 1)) !== 0) {
+      throw new RangeError(`Alignment must be a power of 2, got ${alignment}`);
+    }
+
+    this.#offset = (oldOffset + alignment - 1) & ~(alignment - 1);
+
+    if (this.#offset < oldOffset) {
+      throw new RangeError("Alignment calculation overflow");
+    }
   }
 
   #createPartition<T extends SchemaSpec<T> | null>(
     [name, value]: [keyof T, SchemaProperty],
     maxOwners: number | null = null,
   ): [keyof T, TypedArray] {
+    // Validate schema entry
+    this.#validateSchemaEntry(String(name), value);
+
     const Ctr: TypedArrayConstructor = Array.isArray(value) ? value[0] : value;
     const initialValue: number = Array.isArray(value) ? value[1] : 0;
     const bytesPerElement = Ctr.BYTES_PER_ELEMENT;
@@ -97,18 +123,41 @@ export class PartitionedBuffer extends ArrayBuffer {
     const elements = this.#maxEntitiesPerPartition;
     const requiredBytes = elements * bytesPerElement;
 
-    // Single alignment calculation
-    this.#alignOffset(bytesPerElement);
+    // Validate size
+    if (requiredBytes > MAX_PARTITION_SIZE) {
+      throw new RangeError(
+        `Partition "${
+          String(name)
+        }" size (${requiredBytes} bytes) exceeds maximum allowed (${MAX_PARTITION_SIZE} bytes)`,
+      );
+    }
+
+    try {
+      this.#alignOffset(bytesPerElement);
+    } catch (error) {
+      throw new Error(`Failed to align partition "${String(name)}": ${(error as Error).message}`);
+    }
 
     if (this.#offset + requiredBytes > this.byteLength) {
-      throw new Error(`Buffer overflow: insufficient space for partition ${String(name)}`);
+      const available = this.byteLength - this.#offset;
+      throw new Error(
+        `Buffer overflow: insufficient space for partition "${String(name)}"\n` +
+          `Required: ${requiredBytes} bytes\n` +
+          `Available: ${available} bytes\n` +
+          `Missing: ${requiredBytes - available} bytes`,
+      );
     }
 
     // Create array at aligned offset
-    const typedArray = new Ctr(this, this.#offset, elements);
-
-    // Use native fill which is faster than loop
-    typedArray.fill(initialValue);
+    let typedArray: TypedArray;
+    try {
+      typedArray = new Ctr(this, this.#offset, elements);
+      typedArray.fill(initialValue);
+    } catch (error) {
+      throw new Error(
+        `Failed to create TypedArray for partition "${String(name)}": ${(error as Error).message}`,
+      );
+    }
 
     this.#offset += requiredBytes;
 
@@ -116,24 +165,15 @@ export class PartitionedBuffer extends ArrayBuffer {
   }
 
   /**
-   * Add a partition to the buffer
-   * @param partition - The partition specification to add
-   * @param partition.name - Unique name for the partition
-   * @param partition.schema - Schema defining the data structure
-   * @param partition.maxOwners - Optional limit on number of owners
-   * @returns The partition storage, or null if no schema was provided
-   * @throws {Error} If the partition name exists or there isn't enough space
-   * @throws {TypeError} If the schema contains invalid properties
+   * Validates partition parameters before creation
+   * @throws {Error} If validation fails
    */
-  addPartition<T extends SchemaSpec<T> | null = null>(spec: PartitionSpec<T>): PartitionStorage<T> {
-    const { name, schema = null, maxOwners = null } = spec;
-
-    if (!schema) return null as PartitionStorage<T>;
-
-    // Fast path for existing partitions
-    if (this.#partitions.has(spec as PartitionSpec<SchemaSpec<unknown>>)) {
-      return this.#partitions.get(spec as PartitionSpec<SchemaSpec<unknown>>) as PartitionStorage<T>;
-    }
+  #validatePartitionParams<T extends SchemaSpec<T>>(
+    partition: Partition<T>,
+    name: string,
+    maxOwners: number | null,
+  ): void {
+    if (this.#partitions.has(partition)) return;
 
     if (this.#partitionsByNames.has(name)) {
       throw new Error(`Partition name ${name} already exists`);
@@ -142,56 +182,105 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners < 0)) {
       throw new Error("maxOwners must be a positive integer or null");
     }
+  }
 
-    // Pre-calculate total size needed including alignment
+  /**
+   * Calculates the total aligned size needed for a schema with validation
+   */
+  #calculateAlignedSize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
+    if (!schema) return 0;
+
     let alignedSize = 0;
-    const schemaEntries = Object.entries(schema as Schema<T>) as [keyof T, SchemaProperty][];
-    const numProperties = schemaEntries.length;
+    let lastAlignment: number = MIN_ALIGNMENT;
 
-    // Pre-allocate array for partitions
-    const partitions: [keyof T, TypedArray][] = new Array(numProperties);
-
-    // Calculate aligned size in single pass
-    for (let i = 0; i < numProperties; i++) {
-      const [_, value] = schemaEntries[i]!;
+    for (const [name, value] of Object.entries(schema)) {
+      this.#validateSchemaEntry(name, value as SchemaProperty);
       const Ctr = Array.isArray(value) ? value[0] : value;
-      alignedSize = (alignedSize + Ctr.BYTES_PER_ELEMENT - 1) & ~(Ctr.BYTES_PER_ELEMENT - 1);
-      alignedSize += this.#maxEntitiesPerPartition;
+      const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
+      const partitionSize = this.#maxEntitiesPerPartition * Ctr.BYTES_PER_ELEMENT;
+
+      // Validate partition size
+      if (partitionSize > MAX_PARTITION_SIZE) {
+        throw new RangeError(
+          `Partition property "${name}" size (${partitionSize} bytes) exceeds maximum allowed (${MAX_PARTITION_SIZE} bytes)`,
+        );
+      }
+
+      // Track largest alignment for final size alignment
+      lastAlignment = Math.max(lastAlignment, alignment);
+
+      // Calculate aligned offset
+      const alignedOffset = (alignedSize + alignment - 1) & ~(alignment - 1);
+
+      // Check for overflow
+      if (alignedOffset < alignedSize || alignedOffset > Number.MAX_SAFE_INTEGER - partitionSize) {
+        throw new RangeError(`Schema size calculation overflow at property "${name}"`);
+      }
+
+      alignedSize = alignedOffset + partitionSize;
     }
 
+    // Ensure final size is aligned
+    const finalSize = (alignedSize + lastAlignment - 1) & ~(lastAlignment - 1);
+    if (finalSize < alignedSize) {
+      throw new RangeError("Final size alignment overflow");
+    }
+
+    return finalSize;
+  }
+
+  /**
+   * Add a partition to the buffer
+   * @param partition - The partition specification to add
+   * @returns The partition storage, or null if no schema was provided
+   * @throws {Error} If the partition name exists or there isn't enough space
+   * @throws {TypeError} If the schema contains invalid properties
+   */
+  addPartition<T extends SchemaSpec<T> | null = null>(partition: Partition<T>): PartitionStorage<T> {
+    const { name, schema = null, maxOwners = null } = partition;
+
+    if (!schema) return null as PartitionStorage<T>;
+
+    // Fast path for existing partitions
+    if (this.#partitions.has(partition)) {
+      return this.#partitions.get(partition) as PartitionStorage<T>;
+    }
+
+    // Validate parameters
+    this.#validatePartitionParams(partition, name, maxOwners);
+
+    // Calculate required space
+    const alignedSize = this.#calculateAlignedSize(schema);
     if (alignedSize > this.getFreeSpace()) {
-      throw new Error(`Not enough free space to add partition ${name} (needs ${alignedSize} bytes)`);
+      const required = alignedSize - this.getFreeSpace();
+      const hint = `(Size: ${alignedSize}; Available: ${this.getFreeSpace()}; Required: ${required})`;
+      throw new Error(`Not enough free space to add partition ${name} ${hint}`);
     }
 
-    // Create partitions in single pass
-    for (let i = 0; i < numProperties; i++) {
-      partitions[i] = this.#createPartition(schemaEntries[i]!, maxOwners);
-    }
+    // Create partitions
+    const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
+    const partitions = schemaEntries.map((entry) => this.#createPartition(entry, maxOwners));
 
-    const partition = {
+    // Create and store the partition storage
+    const result = {
       byteLength: alignedSize,
       byteOffset: this.#offset,
       partitions: Object.fromEntries(partitions) as Record<keyof T, TypedArray>,
     } as unknown as PartitionStorage<T>;
 
-    this.#partitions.set(spec as PartitionSpec<SchemaSpec<unknown>>, partition);
-    this.#partitionsByNames.set(name, partition);
+    this.#partitions.set(partition, result);
+    this.#partitionsByNames.set(name, result);
     this.#offset += alignedSize;
 
-    return partition;
+    return result;
   }
 
   /** Clear the buffer and release references */
   clear(): this {
-    this.#partitions.forEach((partition) => {
-      if (!partition) return;
-      Object.values(partition.partitions).forEach((typedArray) => {
-        (typedArray as TypedArray).fill(0);
-      });
-    });
-    this.#offset = 0;
+    this.#partitions.forEach(clearAllPartitionArrays);
     this.#partitions.clear();
     this.#partitionsByNames.clear();
+    this.#offset = 0;
     return this;
   }
 
@@ -202,12 +291,12 @@ export class PartitionedBuffer extends ArrayBuffer {
 
   /**
    * Get a partition by name or spec
-   * @param key - The partition name or spec to retrieve
+   * @param key - The partition name or object to retrieve
    * @returns The partition storage if found, undefined otherwise
    * @throws {TypeError} If key is null or undefined
    */
   getPartition<T extends SchemaSpec<T> | null = null>(
-    key: PartitionSpec<T> | string,
+    key: Partition<T> | string,
   ): PartitionStorage<T> | undefined {
     if (!key) {
       throw new TypeError("key must be a string or PartitionSpec");
@@ -215,7 +304,7 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (typeof key === "string") {
       return this.#partitionsByNames.get(key) as PartitionStorage<T> | undefined;
     }
-    return this.#partitions.get(key as PartitionSpec<SchemaSpec<unknown>>) as PartitionStorage<T> | undefined;
+    return this.#partitions.get(key as Partition<T>) as PartitionStorage<T> | undefined;
   }
 
   /** Get the current offset into the underlying ArrayBuffer */
@@ -237,6 +326,25 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (typeof key === "string") {
       return this.#partitionsByNames.has(key);
     }
-    return this.#partitions.has(key as PartitionSpec<SchemaSpec<unknown>>);
+    return this.#partitions.has(key as Partition<T>);
+  }
+
+  /**
+   * Validates schema entry values
+   * @throws {TypeError} If the schema entry is invalid
+   */
+  #validateSchemaEntry(name: string, value: SchemaProperty): void {
+    const Ctr = Array.isArray(value) ? value[0] : value;
+    const initialValue = Array.isArray(value) ? value[1] : 0;
+
+    if (!isTypedArrayConstructor(Ctr)) {
+      throw new TypeError(`Invalid type for schema property "${String(name)}"`);
+    }
+
+    if (Array.isArray(value) && !isValidTypedArrayValue(Ctr, initialValue)) {
+      throw new TypeError(
+        `Invalid initial value ${initialValue} for schema property "${String(name)}" of type ${Ctr.name}`,
+      );
+    }
   }
 }

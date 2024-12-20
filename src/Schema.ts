@@ -14,6 +14,9 @@ import {
   type TypedArrayConstructor,
 } from "./utils.ts";
 
+/** Maximum alignment in bytes for TypedArrays */
+const MAX_ALIGNMENT = 8;
+
 /**
  * Internal schema data storage
  */
@@ -96,14 +99,11 @@ const isValidSchemaEntry = (prop: [string, SchemaProperty]): boolean => {
  * @param schema the object to test
  */
 export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<unknown> | null> => {
+  if (schema === null) return true; // Explicitly handle null schemas
   try {
-    if (!schema || !isObject(schema)) {
-      return false;
-    }
+    if (!isObject(schema)) return false;
     const entries = Object.entries(schema) as [string, SchemaProperty][];
-    if (!entries.length) {
-      return false;
-    }
+    if (!entries.length) return false;
     return entries.every(isValidSchemaEntry);
   } catch (_) {
     return false;
@@ -111,26 +111,53 @@ export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<unknown> 
 };
 
 /**
- * @internal
- * Utility function to add a typed array's bytes per element to a total
- * @see calculateSchemaSize
+ * Calculate the aligned size of a schema in bytes
+ * @param schema the schema to calculate the size of
+ * @returns the size in bytes
  */
-const byteSum = (total: unknown, value: unknown): number => {
-  const size = Array.isArray(value)
-    ? (value[0] as TypedArray).BYTES_PER_ELEMENT
-    : (value as TypedArray).BYTES_PER_ELEMENT;
-  return (total as number) + size;
-};
+export function getSchemaSize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
+  if (!schema || !isSchema(schema)) return Number.NaN;
 
-/**
- * @returns the required size in bytes for a component's storage for one entity, or `NaN` if the object is invalid;
- */
-export const getSchemaSize = (schema: Schema<SchemaSpec<unknown> | null>): number => {
-  if (!schema) {
-    return 0;
+  let size = 0;
+  let maxAlignment = 1;
+  const schemaEntries = Object.entries(schema);
+
+  if (schemaEntries.length === 0) return 0;
+
+  // First pass: find maximum alignment requirement
+  for (const [name, value] of schemaEntries) {
+    const Ctr = Array.isArray(value) ? value[0] : value;
+    const alignment = Ctr.BYTES_PER_ELEMENT;
+
+    // Validate alignment is power of 2
+    if ((alignment & (alignment - 1)) !== 0) {
+      throw new Error(`Invalid alignment ${alignment} for property "${name}"`);
+    }
+
+    maxAlignment = Math.max(maxAlignment, Math.min(alignment, MAX_ALIGNMENT));
   }
-  if (!isSchema(schema)) {
-    return Number.NaN;
+
+  // Second pass: calculate aligned size
+  for (const [name, value] of schemaEntries) {
+    const Ctr = Array.isArray(value) ? value[0] : value;
+    const bytes = Ctr.BYTES_PER_ELEMENT;
+
+    // Align current offset
+    const alignedOffset = (size + bytes - 1) & ~(bytes - 1);
+
+    // Check for overflow
+    if (alignedOffset < size || alignedOffset > Number.MAX_SAFE_INTEGER - bytes) {
+      throw new Error(`Size calculation overflow at property "${name}"`);
+    }
+
+    size = alignedOffset + bytes;
   }
-  return Object.values(schema).reduce(byteSum, 0) as number;
-};
+
+  // Align final size
+  const finalSize = (size + maxAlignment - 1) & ~(maxAlignment - 1);
+  if (finalSize < size) {
+    throw new Error("Final size alignment overflow");
+  }
+
+  return finalSize;
+}
