@@ -74,7 +74,12 @@ export const VALID_NAME_PATTERN: RegExp = /^(?![0-9])[a-zA-Z0-9$_]+$/;
 
 /** @returns `true` if the given string is an valid name / label */
 export const isValidName = (str: string): boolean => {
-  return !!(typeof str === "string" && str.length > 0 && !FORBIDDEN_NAMES.has(str) && VALID_NAME_PATTERN.test(str));
+  if (typeof str !== "string") return false;
+  const trimmed = str.trim();
+  return trimmed.length > 0 &&
+    trimmed.length <= 255 &&
+    !FORBIDDEN_NAMES.has(trimmed) &&
+    VALID_NAME_PATTERN.test(trimmed);
 };
 
 /**
