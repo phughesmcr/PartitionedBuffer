@@ -103,7 +103,7 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (this.#offset + alignment > this.byteLength) {
       throw new RangeError("Insufficient space for alignment");
     }
-    
+
     this.#offset = (oldOffset + alignment - 1) & ~(alignment - 1);
 
     if (this.#offset < oldOffset) {
