@@ -60,7 +60,7 @@ export class PartitionedBuffer extends ArrayBuffer {
    *   or if `size` or `maxEntitiesPerPartition` are not positive safe integers
    *   or if `size` is not a multiple of `maxEntitiesPerPartition`
    */
-  constructor(size: number, maxEntitiesPerPartition: number) {
+  constructor(size: number, maxEntitiesPerPartition: number = size) {
     // Validate size
     if (!isUint32(size)) {
       throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition and a Uint32 number");
@@ -69,16 +69,18 @@ export class PartitionedBuffer extends ArrayBuffer {
     }
 
     // Validate maxEntitiesPerPartition
-    if (!isUint32(maxEntitiesPerPartition)) {
-      throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
-    } else if (maxEntitiesPerPartition <= 0) {
-      throw new SyntaxError("maxEntitiesPerPartition must be > 0");
-    } else if (maxEntitiesPerPartition < 8) {
-      throw new SyntaxError(
-        "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
-      );
-    } else if (size % maxEntitiesPerPartition !== 0) {
-      throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition");
+    if (maxEntitiesPerPartition !== size) {
+      if (!isUint32(maxEntitiesPerPartition)) {
+        throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
+      } else if (maxEntitiesPerPartition <= 0) {
+        throw new SyntaxError("maxEntitiesPerPartition must be > 0");
+      } else if (maxEntitiesPerPartition < 8) {
+        throw new SyntaxError(
+          "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
+        );
+      } else if (size % maxEntitiesPerPartition !== 0) {
+        throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition");
+      }
     }
 
     super(size);
