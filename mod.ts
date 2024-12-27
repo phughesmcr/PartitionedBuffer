@@ -5,8 +5,8 @@
  * @license     MIT
  */
 
-import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
-import { Partition } from "./src/Partition.ts";
+import { PartitionedBuffer,  } from "./src/PartitionedBuffer.ts";
+import { Partition, type PartitionSpec } from "./src/Partition.ts";
 import { getSchemaSize, isSchema, type Schema } from "./src/Schema.ts";
 import { isValidName } from "./src/utils.ts";
 
@@ -15,4 +15,4 @@ import { isValidName } from "./src/utils.ts";
  * PartitionedBuffer is a convenient way to manage a data in ArrayBuffers.
  */
 export { getSchemaSize, isSchema, isValidName, Partition, PartitionedBuffer };
-export type { Schema };
+export type { PartitionSpec, Schema };
