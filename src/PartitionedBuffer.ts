@@ -17,12 +17,6 @@ import {
   zeroArray,
 } from "./utils.ts";
 
-/** Minimum alignment in bytes for TypedArrays */
-const MIN_ALIGNMENT = 8 as const;
-
-/** Maximum safe partition size to prevent allocation errors */
-const MAX_PARTITION_SIZE = 1073741824 as const; // 1GB (1024 * 1024 * 1024)
-
 /**
  * Clear all partitions in a buffer
  * @param partition the partition to clear
@@ -38,6 +32,12 @@ function clearAllPartitionArrays<T extends SchemaSpec<T>>(
 
 /** A PartitionedBuffer is an ArrayBuffer with named storage partitions. */
 export class PartitionedBuffer extends ArrayBuffer {
+  /** Minimum alignment in bytes for TypedArrays */
+  static readonly MIN_ALIGNMENT = 8 as const;
+
+  /** Maximum safe partition size to prevent allocation errors */
+  static readonly MAX_PARTITION_SIZE = 1073741824 as const; // 1GB (1024 * 1024 * 1024)
+
   /** The maximum possible number of owners per partition */
   readonly #maxEntitiesPerPartition: number;
 
@@ -98,7 +98,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   #alignOffset(alignment: number): void {
     const oldOffset = this.#offset;
     // Ensure minimum alignment and power of 2
-    alignment = Math.max(alignment, MIN_ALIGNMENT);
+    alignment = Math.max(alignment, PartitionedBuffer.MIN_ALIGNMENT);
     if ((alignment & (alignment - 1)) !== 0) {
       throw new RangeError(`Alignment must be a power of 2, got ${alignment}`);
     }
@@ -129,11 +129,11 @@ export class PartitionedBuffer extends ArrayBuffer {
     const requiredBytes = elements * bytesPerElement;
 
     // Validate size
-    if (requiredBytes > MAX_PARTITION_SIZE) {
+    if (requiredBytes > PartitionedBuffer.MAX_PARTITION_SIZE) {
       throw new RangeError(
         `Partition "${
           String(name)
-        }" size (${requiredBytes} bytes) exceeds maximum allowed (${MAX_PARTITION_SIZE} bytes)`,
+        }" size (${requiredBytes} bytes) exceeds maximum allowed (${PartitionedBuffer.MAX_PARTITION_SIZE} bytes)`,
       );
     }
 
@@ -196,18 +196,18 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (!schema) return 0;
 
     let alignedSize = 0;
-    let lastAlignment: number = MIN_ALIGNMENT;
+    let lastAlignment: number = PartitionedBuffer.MIN_ALIGNMENT;
 
     for (const [name, value] of Object.entries(schema)) {
       this.#validateSchemaEntry(name, value as SchemaProperty);
       const Ctr = Array.isArray(value) ? value[0] : value;
-      const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
+      const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, PartitionedBuffer.MIN_ALIGNMENT);
       const partitionSize = this.#maxEntitiesPerPartition * Ctr.BYTES_PER_ELEMENT;
 
       // Validate partition size
-      if (partitionSize > MAX_PARTITION_SIZE) {
+      if (partitionSize > PartitionedBuffer.MAX_PARTITION_SIZE) {
         throw new RangeError(
-          `Partition property "${name}" size (${partitionSize} bytes) exceeds maximum allowed (${MAX_PARTITION_SIZE} bytes)`,
+          `Partition property "${name}" size (${partitionSize} bytes) exceeds maximum allowed (${PartitionedBuffer.MAX_PARTITION_SIZE} bytes)`,
         );
       }
 
