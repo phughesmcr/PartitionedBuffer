@@ -35,24 +35,16 @@ export type TypedArrayConstructor =
 
 /** An array of strings that cannot be used for component or schema property names */
 export const FORBIDDEN_NAMES: Set<string> = new Set([
-  // buffer properties:
-  "byteLength",
-  "byteOffset",
-  // proxy properties:
-  "entity",
-  "getEntity",
-  "setEntity",
-  // component instance properties:
-  "id",
-  "proxy",
-  "storage",
-  "type",
-  // component properties:
+  // partition properties:
   "isTag",
   "maxEntities",
   "name",
   "schema",
   "size",
+  // object getters/setters used in `SparseFacade`:
+  "deleteProperty",
+  "get",
+  "set",
   // object prototype properties (`Object.getOwnPropertyNames(Object.getPrototypeOf({}))`):
   "__defineGetter__",
   "__defineSetter__",
