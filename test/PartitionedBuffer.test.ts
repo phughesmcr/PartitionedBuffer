@@ -1,4 +1,7 @@
-import { assertEquals, assertThrows } from "@std/assert";
+/// <reference lib="deno.ns" />
+/// <reference lib="dom" />
+
+import { assertEquals, assertThrows } from "jsr:@std/assert@^1.0.9";
 import { PartitionedBuffer } from "../src/PartitionedBuffer.ts";
 import { Partition, type PartitionSpec } from "../src/Partition.ts";
 import type { Schema } from "../src/Schema.ts";

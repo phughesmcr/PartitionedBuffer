@@ -1,3 +1,6 @@
+/// <reference lib="deno.ns" />
+/// <reference lib="dom" />
+
 import { PartitionedBuffer } from "../src/PartitionedBuffer.ts";
 import { Partition, type PartitionSpec } from "../src/Partition.ts";
 
