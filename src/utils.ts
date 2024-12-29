@@ -72,7 +72,16 @@ export const FORBIDDEN_NAMES: Set<string> = new Set([
 /** Valid string name characters */
 export const VALID_NAME_PATTERN: RegExp = /^(?![0-9])[a-zA-Z0-9$_]+$/;
 
-/** @returns `true` if the given string is an valid name / label */
+/**
+ * Test if a string is a valid name / label
+ *
+ * Valid names are string between 1 and 255 characters,
+ * which match the `VALID_NAME_PATTERN` regex,
+ * and is not in the `FORBIDDEN_NAMES` set.
+ *
+ * @param str the string to test
+ * @returns `true` if the string is a valid name / label
+ */
 export const isValidName = (str: string): boolean => {
   if (typeof str !== "string") return false;
   const trimmed = str.trim();
