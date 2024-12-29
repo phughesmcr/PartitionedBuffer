@@ -88,7 +88,7 @@ export const isValidName = (str: string): boolean => {
  * @returns `true` if the object is a valid Record
  */
 export const isObject = <T extends Record<string, unknown>>(object: unknown): object is T => {
-  return !!(typeof object === "object" && !Array.isArray(object));
+  return (typeof object === "object" && !Array.isArray(object));
 };
 
 /**
@@ -119,7 +119,7 @@ export const hasOwnProperty = <T>(object: T, key: PropertyKey): key is keyof T =
  * @returns `true` if the object is a typed array and not a dataview
  */
 export const isTypedArray = <T extends TypedArray>(object: unknown): object is T => {
-  return !!(ArrayBuffer.isView(object) && !(object instanceof DataView));
+  return (ArrayBuffer.isView(object) && !(object instanceof DataView));
 };
 
 /**
@@ -130,7 +130,7 @@ export const isTypedArray = <T extends TypedArray>(object: unknown): object is T
 export const isTypedArrayConstructor = <T extends TypedArrayConstructor>(
   object: unknown,
 ): object is T => {
-  return !!(typeof object === "function" && hasOwnProperty(object, "BYTES_PER_ELEMENT"));
+  return (typeof object === "function" && hasOwnProperty(object, "BYTES_PER_ELEMENT"));
 };
 
 /**
