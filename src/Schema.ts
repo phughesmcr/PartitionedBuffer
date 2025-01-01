@@ -18,7 +18,7 @@ import {
 const MAX_ALIGNMENT = 8;
 
 /**
- * Internal schema data storage
+ * Storage convenience object
  */
 export type SchemaStorage<T> = {
   byteOffset: number;
