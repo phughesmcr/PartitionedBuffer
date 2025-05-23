@@ -1,9 +1,9 @@
 /** @returns `true` if ```typeof n === 'number'``` */
 export const isNumber = (n: unknown): n is number => typeof n === "number";
 
-/** @returns `true` if n is a number, >= 0, <= 2^32 - 1 (4294967295)*/
+/** @returns `true` if n is a number, >= 0, <= 2^32 - 1 (4294967295) and is an integer*/
 export const isUint32 = (n: number): n is number => {
-  return isNumber(n) && !isNaN(n) && n >= 0 && n <= 4294967295;
+  return Number.isSafeInteger(n) && n >= 0 && n <= 4294967295;
 };
 
 /** @returns true if `n` is a Uint32 > 0 */
@@ -111,6 +111,7 @@ export const isNumberBetween = <T = number>(value: T, min: T, max: T, inclusive 
  * @returns `true` if the object has the given key
  */
 export const hasOwnProperty = <T>(object: T, key: PropertyKey): key is keyof T => {
+  if (object == null) return false; // Handle null and undefined
   return Object.prototype.hasOwnProperty.call(object, key);
 };
 

@@ -6,14 +6,21 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@^1.0.9";
 import { isValidName } from "../mod.ts";
 import { Partition, type PartitionSpec } from "../src/Partition.ts";
 import { PartitionedBuffer } from "../src/PartitionedBuffer.ts";
-import { getSchemaSize, type Schema } from "../src/Schema.ts";
+import { getEntitySize, isSchema, type Schema } from "../src/Schema.ts";
 import { sparseFacade } from "../src/SparseFacade.ts";
 import {
+  disposeSparseArray,
   FORBIDDEN_NAMES,
+  hasOwnProperty,
+  isNumber,
+  isNumberBetween,
   isObject,
+  isPositiveUint32,
+  isTypedArray,
   isTypedArrayConstructor,
   isUint32,
   isValidTypedArrayValue,
+  VALID_NAME_PATTERN,
   zeroArray,
 } from "../src/utils.ts";
 
@@ -1070,7 +1077,7 @@ Deno.test("PartitionedBuffer - Edge Cases", () => {
   assertThrows(
     () => new PartitionedBuffer(1024, 16.5),
     SyntaxError,
-    "size must be a multiple of maxEntitiesPerPartition",
+    "maxEntitiesPerPartition must be a Uint32 number",
   );
 
   // Test with very large maxEntitiesPerPartition
@@ -1276,7 +1283,7 @@ Deno.test("Utils - isUint32", () => {
   // Invalid values
   assertEquals(isUint32(-1), false);
   assertEquals(isUint32(4294967296), false); // 2^32
-  assertEquals(isUint32(1.5), true); // isUint32 doesn't check for integers, only range
+  assertEquals(isUint32(1.5), false); // non-integers are invalid for Uint32
   assertEquals(isUint32(NaN), false);
   assertEquals(isUint32(Infinity), false);
   assertEquals(isUint32(-Infinity), false);
@@ -1327,12 +1334,189 @@ Deno.test("Utils - zeroArray", () => {
   }
 });
 
+Deno.test("Utils - isNumber", () => {
+  // Valid numbers
+  assertEquals(isNumber(0), true);
+  assertEquals(isNumber(42), true);
+  assertEquals(isNumber(-42), true);
+  assertEquals(isNumber(3.14), true);
+  assertEquals(isNumber(Number.MAX_VALUE), true);
+  assertEquals(isNumber(Number.MIN_VALUE), true);
+  assertEquals(isNumber(Infinity), true);
+  assertEquals(isNumber(-Infinity), true);
+  assertEquals(isNumber(NaN), true);
+
+  // Invalid numbers
+  assertEquals(isNumber("42"), false);
+  assertEquals(isNumber(null), false);
+  assertEquals(isNumber(undefined), false);
+  assertEquals(isNumber({}), false);
+  assertEquals(isNumber([]), false);
+  assertEquals(isNumber(true), false);
+});
+
+Deno.test("Utils - isPositiveUint32", () => {
+  // Valid positive Uint32 values
+  assertEquals(isPositiveUint32(1), true);
+  assertEquals(isPositiveUint32(42), true);
+  assertEquals(isPositiveUint32(4294967295), true); // 2^32 - 1
+
+  // Invalid values
+  assertEquals(isPositiveUint32(0), false); // zero is not positive
+  assertEquals(isPositiveUint32(-1), false);
+  assertEquals(isPositiveUint32(4294967296), false); // 2^32
+  assertEquals(isPositiveUint32(1.5), false); // decimal
+  assertEquals(isPositiveUint32(NaN), false);
+  assertEquals(isPositiveUint32(Infinity), false);
+});
+
+Deno.test("Utils - isNumberBetween", () => {
+  // Inclusive tests (default)
+  assertEquals(isNumberBetween(5, 1, 10), true);
+  assertEquals(isNumberBetween(1, 1, 10), true); // equal to min
+  assertEquals(isNumberBetween(10, 1, 10), true); // equal to max
+  assertEquals(isNumberBetween(0, 1, 10), false); // below min
+  assertEquals(isNumberBetween(11, 1, 10), false); // above max
+
+  // Explicit inclusive tests
+  assertEquals(isNumberBetween(1, 1, 10, true), true);
+  assertEquals(isNumberBetween(10, 1, 10, true), true);
+
+  // Exclusive tests
+  assertEquals(isNumberBetween(5, 1, 10, false), true);
+  assertEquals(isNumberBetween(1, 1, 10, false), false); // equal to min
+  assertEquals(isNumberBetween(10, 1, 10, false), false); // equal to max
+  assertEquals(isNumberBetween(0, 1, 10, false), false); // below min
+  assertEquals(isNumberBetween(11, 1, 10, false), false); // above max
+
+  // Test with negative numbers
+  assertEquals(isNumberBetween(-5, -10, -1), true);
+  assertEquals(isNumberBetween(-10, -10, -1), true);
+  assertEquals(isNumberBetween(-1, -10, -1), true);
+  assertEquals(isNumberBetween(-11, -10, -1), false);
+  assertEquals(isNumberBetween(0, -10, -1), false);
+
+  // Test with floats
+  assertEquals(isNumberBetween(3.14, 3, 4), true);
+  assertEquals(isNumberBetween(2.99, 3, 4), false);
+});
+
+Deno.test("Utils - hasOwnProperty", () => {
+  const obj = { a: 1, b: 2, c: 3 };
+
+  // Valid properties
+  assertEquals(hasOwnProperty(obj, "a"), true);
+  assertEquals(hasOwnProperty(obj, "b"), true);
+  assertEquals(hasOwnProperty(obj, "c"), true);
+
+  // Invalid properties
+  assertEquals(hasOwnProperty(obj, "d"), false);
+  assertEquals(hasOwnProperty(obj, "toString"), false); // inherited property
+
+  // Test with array
+  const arr = [1, 2, 3];
+  assertEquals(hasOwnProperty(arr, 0), true);
+  assertEquals(hasOwnProperty(arr, "0"), true);
+  assertEquals(hasOwnProperty(arr, "length"), true);
+  assertEquals(hasOwnProperty(arr, 5), false);
+
+  // Test with null/undefined
+  assertEquals(hasOwnProperty(null as any, "a"), false);
+  assertEquals(hasOwnProperty(undefined as any, "a"), false);
+});
+
+Deno.test("Utils - isTypedArray", () => {
+  // Valid TypedArrays
+  assertEquals(isTypedArray(new Int8Array()), true);
+  assertEquals(isTypedArray(new Uint8Array()), true);
+  assertEquals(isTypedArray(new Uint8ClampedArray()), true);
+  assertEquals(isTypedArray(new Int16Array()), true);
+  assertEquals(isTypedArray(new Uint16Array()), true);
+  assertEquals(isTypedArray(new Int32Array()), true);
+  assertEquals(isTypedArray(new Uint32Array()), true);
+  assertEquals(isTypedArray(new Float32Array()), true);
+  assertEquals(isTypedArray(new Float64Array()), true);
+
+  // Invalid arrays/objects
+  assertEquals(isTypedArray([]), false); // Regular array
+  assertEquals(isTypedArray(new DataView(new ArrayBuffer(8))), false); // DataView
+  assertEquals(isTypedArray({}), false);
+  assertEquals(isTypedArray(null), false);
+  assertEquals(isTypedArray(undefined), false);
+  assertEquals(isTypedArray("string"), false);
+  assertEquals(isTypedArray(new ArrayBuffer(8)), false); // ArrayBuffer itself
+});
+
+Deno.test("Utils - disposeSparseArray", () => {
+  // Test with regular TypedArray (should have no effect)
+  const regular = new Int32Array([1, 2, 3]);
+  disposeSparseArray(regular);
+  assertEquals(Array.from(regular), [1, 2, 3]); // Unchanged
+
+  // Test with SparseFacade
+  const dense = new Int32Array([1, 2, 3, 4]);
+  const sparse = sparseFacade(dense);
+
+  // Set some sparse values
+  sparse[10] = 42;
+  sparse[20] = 84;
+
+  // Verify values are set
+  assertEquals(sparse[10], 42);
+  assertEquals(sparse[20], 84);
+
+  // Dispose using helper function
+  disposeSparseArray(sparse);
+
+  // Verify disposal worked
+  assertEquals(sparse[10], undefined);
+  assertEquals(sparse[20], undefined);
+  assertEquals(Array.from(dense), [0, 0, 0, 0]); // Dense array should be zeroed
+});
+
+Deno.test("Utils - VALID_NAME_PATTERN", () => {
+  // Test valid patterns
+  assertEquals(VALID_NAME_PATTERN.test("validName"), true);
+  assertEquals(VALID_NAME_PATTERN.test("valid_name"), true);
+  assertEquals(VALID_NAME_PATTERN.test("valid123"), true);
+  assertEquals(VALID_NAME_PATTERN.test("_underscore"), true);
+  assertEquals(VALID_NAME_PATTERN.test("$dollar"), true);
+  assertEquals(VALID_NAME_PATTERN.test("a"), true);
+  assertEquals(VALID_NAME_PATTERN.test("ABC"), true);
+
+  // Test invalid patterns
+  assertEquals(VALID_NAME_PATTERN.test("123invalid"), false); // starts with number
+  assertEquals(VALID_NAME_PATTERN.test("invalid-name"), false); // hyphen
+  assertEquals(VALID_NAME_PATTERN.test("invalid.name"), false); // dot
+  assertEquals(VALID_NAME_PATTERN.test("invalid name"), false); // space
+  assertEquals(VALID_NAME_PATTERN.test("invalid@name"), false); // special character
+  assertEquals(VALID_NAME_PATTERN.test(""), false); // empty string
+  assertEquals(VALID_NAME_PATTERN.test("invalid/name"), false); // slash
+});
+
+Deno.test("Schema - isSchema function", () => {
+  // Valid schemas
+  assertEquals(isSchema({ x: Float32Array }), true);
+  assertEquals(isSchema({ x: Float32Array, y: Float32Array }), true);
+  assertEquals(isSchema({ value: [Int32Array, 42] }), true);
+  assertEquals(isSchema(null), true); // null schema is valid
+
+  // Invalid schemas
+  assertEquals(isSchema({}), false); // empty object
+  assertEquals(isSchema(undefined), false);
+  assertEquals(isSchema("string"), false);
+  assertEquals(isSchema(123), false);
+  assertEquals(isSchema([]), false);
+  assertEquals(isSchema({ invalidProp: {} }), false); // invalid property value
+  assertEquals(isSchema({ "123invalid": Float32Array }), false); // invalid property name
+});
+
 // ===== SCHEMA MODULE DIRECT TESTING =====
 
-Deno.test("Schema - getSchemaSize", () => {
+Deno.test("Schema - getEntitySize", () => {
   // Simple schema
   const simpleSchema = { x: Float32Array, y: Float32Array };
-  const simpleSize = getSchemaSize(simpleSchema);
+  const simpleSize = getEntitySize(simpleSchema);
   assertEquals(simpleSize, 16); // 8 + 8 bytes, each Float32Array aligned to 8 bytes due to MIN_ALIGNMENT
 
   // Mixed types schema
@@ -1341,7 +1525,7 @@ Deno.test("Schema - getSchemaSize", () => {
     float64: Float64Array,
     int32: Int32Array,
   };
-  const mixedSize = getSchemaSize(mixedSchema);
+  const mixedSize = getEntitySize(mixedSchema);
   assertEquals(mixedSize > 0, true);
   assertEquals(mixedSize % 8, 0); // should be 8-byte aligned
 
@@ -1350,16 +1534,16 @@ Deno.test("Schema - getSchemaSize", () => {
     x: [Float32Array, 100] as [Float32ArrayConstructor, number],
     y: [Int32Array, 42] as [Int32ArrayConstructor, number],
   };
-  const initialValueSize = getSchemaSize(initialValueSchema);
+  const initialValueSize = getEntitySize(initialValueSchema);
   assertEquals(initialValueSize, 16); // 8 + 8 bytes, both properties aligned to 8 bytes due to MIN_ALIGNMENT
 
-  // Empty schema - isSchema({}) returns false, so getSchemaSize returns NaN
+  // Empty schema - isSchema({}) returns false, so getEntitySize returns NaN
   const emptySchema = {};
-  assertEquals(isNaN(getSchemaSize(emptySchema)), true);
+  assertEquals(isNaN(getEntitySize(emptySchema)), true);
 
   // Invalid schema - these return NaN
-  assertEquals(isNaN(getSchemaSize(null as any)), true);
-  assertEquals(isNaN(getSchemaSize(undefined as any)), true);
+  assertEquals(isNaN(getEntitySize(null as any)), true);
+  assertEquals(isNaN(getEntitySize(undefined as any)), true);
 });
 
 // ===== SPARSE FACADE ADVANCED TESTING =====
