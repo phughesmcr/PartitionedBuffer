@@ -184,7 +184,7 @@ export class PartitionedBuffer extends ArrayBuffer {
       throw new Error(`Partition name ${name} already exists`);
     }
 
-    if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners < 0)) {
+    if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners <= 0)) {
       throw new Error("maxOwners must be a positive integer or null");
     }
   }
@@ -262,6 +262,9 @@ export class PartitionedBuffer extends ArrayBuffer {
       throw new Error(`Not enough free space to add partition ${name} ${hint}`);
     }
 
+    // Capture start offset before creating partitions
+    const startOffset = this.#offset;
+
     // Create partitions
     const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
     const partitions = schemaEntries.map((entry) => this.#createPartition(entry, maxOwners));
@@ -269,13 +272,12 @@ export class PartitionedBuffer extends ArrayBuffer {
     // Create and store the partition storage
     const result = {
       byteLength: alignedSize,
-      byteOffset: this.#offset,
+      byteOffset: startOffset,
       partitions: Object.fromEntries(partitions) as Record<keyof T, TypedArray>,
     } as unknown as PartitionStorage<T>;
 
     this.#partitions.set(partition, result);
     this.#partitionsByNames.set(name, result);
-    this.#offset += alignedSize;
 
     return result;
   }
