@@ -13,9 +13,37 @@ export type SparseFacade<T extends TypedArray> = T;
 
 /**
  * A Sparse Facade is a proxy to a dense TypedArray that allows for sparse storage of values.
+ *
+ * The SparseFacade maintains a mapping between entity IDs and dense array indices, allowing
+ * efficient sparse storage while keeping the underlying memory dense for cache performance.
+ *
  * @param dense the typed array to apply the facade to
- * @returns A proxy to the dense array
- * @note Use `delete facade[-1]` to dispose of the facade and zero out the dense array
+ * @returns A proxy to the dense array that supports sparse operations
+ *
+ * @example
+ * ```typescript
+ * const dense = new Float32Array(100);
+ * const sparse = sparseFacade(dense);
+ *
+ * // Set values for specific entities
+ * sparse[42] = 3.14;
+ * sparse[1337] = 2.71;
+ *
+ * // Access values
+ * console.log(sparse[42]);   // 3.14
+ * console.log(sparse[999]);  // undefined (not set)
+ *
+ * // Delete specific entities
+ * delete sparse[42];  // Removes entity 42
+ *
+ * // Dispose of the entire facade and zero out the dense array
+ * delete sparse[-1];  // Magic disposal - clears all mappings and zeros dense array
+ * ```
+ *
+ * @note **Disposal Methods:**
+ * - `delete facade[-1]` - Magic disposal that clears all sparse mappings and zeros the dense array
+ * - Use `disposeSparseArray(facade)` helper function for clearer intent
+ * - Use `zeroArray(facade)` to dispose and zero in one operation
  */
 export function sparseFacade<T extends TypedArray>(dense: T): SparseFacade<T> {
   if (dense.length === 0) {

@@ -5,7 +5,7 @@
  * @license     MIT
  */
 
-import type { Partition, PartitionSpec, PartitionStorage } from "./Partition.ts";
+import { Partition, type PartitionSpec, type PartitionStorage } from "./Partition.ts";
 import type { Schema, SchemaProperty, SchemaSpec } from "./Schema.ts";
 import { sparseFacade } from "./SparseFacade.ts";
 import {
@@ -236,12 +236,16 @@ export class PartitionedBuffer extends ArrayBuffer {
 
   /**
    * Add a partition to the buffer
-   * @param partition - The partition specification to add
+   * @param specOrPartition - The partition specification or instance to add
    * @returns The partition storage, or null if no schema was provided
    * @throws {Error} If the partition name exists or there isn't enough space
    * @throws {TypeError} If the schema contains invalid properties
    */
-  addPartition<T extends SchemaSpec<T> | null = null>(partition: Partition<T>): PartitionStorage<T> {
+  addPartition<T extends SchemaSpec<T> | null = null>(
+    specOrPartition: PartitionSpec<T> | Partition<T>,
+  ): PartitionStorage<T> {
+    // Convert spec to internal Partition instance
+    const partition = specOrPartition instanceof Partition ? specOrPartition : new Partition(specOrPartition);
     const { name, schema = null, maxOwners = null } = partition;
 
     if (!schema) return null as PartitionStorage<T>;
@@ -298,12 +302,12 @@ export class PartitionedBuffer extends ArrayBuffer {
 
   /**
    * Get a partition by name or spec
-   * @param key - The partition name or object to retrieve
+   * @param key - The partition name or spec to retrieve
    * @returns The partition storage if found, undefined otherwise
    * @throws {TypeError} If key is null or undefined
    */
   getPartition<T extends SchemaSpec<T> | null = null>(
-    key: Partition<T> | string,
+    key: PartitionSpec<T> | Partition<T> | string,
   ): PartitionStorage<T> | undefined {
     if (!key) {
       throw new TypeError("key must be a string or PartitionSpec");
@@ -311,7 +315,10 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (typeof key === "string") {
       return this.#partitionsByNames.get(key) as PartitionStorage<T> | undefined;
     }
-    return this.#partitions.get(key as Partition<T>) as PartitionStorage<T> | undefined;
+    if (key instanceof Partition) {
+      return this.#partitions.get(key) as PartitionStorage<T> | undefined;
+    }
+    return this.#partitionsByNames.get(key.name) as PartitionStorage<T> | undefined;
   }
 
   /** Get the current offset into the underlying ArrayBuffer */
@@ -325,7 +332,7 @@ export class PartitionedBuffer extends ArrayBuffer {
    * @returns True if the partition exists, false otherwise
    */
   hasPartition<T extends SchemaSpec<T> | null = null>(
-    key: PartitionSpec<T> | string,
+    key: PartitionSpec<T> | Partition<T> | string,
   ): boolean {
     if (!key) {
       throw new TypeError("key must be a string or PartitionSpec");
@@ -333,7 +340,10 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (typeof key === "string") {
       return this.#partitionsByNames.has(key);
     }
-    return this.#partitions.has(key as Partition<T>);
+    if (key instanceof Partition) {
+      return this.#partitions.has(key);
+    }
+    return this.#partitionsByNames.has(key.name);
   }
 
   /**

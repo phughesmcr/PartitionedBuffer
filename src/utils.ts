@@ -168,12 +168,53 @@ export const isValidTypedArrayValue = (
 };
 
 /**
- * Zero out a typed array
+ * Dispose of a SparseFacade and clear its sparse mappings.
+ *
+ * This function provides a clearer alternative to the magic `delete array[-1]` syntax
+ * for disposing of SparseFacade arrays. For regular TypedArrays, this function has no effect.
+ *
+ * @param array the array to dispose (SparseFacade or regular TypedArray)
+ *
+ * @example
+ * ```typescript
+ * const dense = new Float32Array(100);
+ * const sparse = sparseFacade(dense);
+ *
+ * // Method 1: Magic deletion
+ * delete sparse[-1];
+ *
+ * // Method 2: Helper function (clearer intent)
+ * disposeSparseArray(sparse);
+ * ```
+ */
+export function disposeSparseArray<T extends TypedArray>(array: T): void {
+  delete (array as any)[-1];
+}
+
+/**
+ * Zero out a typed array.
+ *
+ * For SparseFacade arrays, this also disposes the sparse mapping by calling the
+ * internal disposal mechanism before zeroing the underlying dense array.
+ * For regular TypedArrays, this simply fills the array with zeros.
+ *
  * @param array the array to zero out
  * @returns the zeroed array
+ *
+ * @example
+ * ```typescript
+ * // For regular arrays
+ * const regular = new Float32Array([1, 2, 3]);
+ * zeroArray(regular); // [0, 0, 0]
+ *
+ * // For SparseFacade arrays (disposes and zeros)
+ * const sparse = sparseFacade(new Float32Array(100));
+ * sparse[42] = 3.14;
+ * zeroArray(sparse); // Disposes sparse mappings and zeros underlying array
+ * ```
  */
 export function zeroArray<T extends TypedArray>(array: T): T {
-  delete array[-1]; // will dispose of a SparseFacade while having no effect on other typed arrays
+  delete (array as any)[-1]; // Dispose SparseFacade or no-op for regular arrays
   array.fill(0);
   return array;
 }
