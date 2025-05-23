@@ -178,7 +178,7 @@ Deno.test("PartitionedBuffer - Error Cases", () => {
   assertThrows(
     () => buffer.addPartition(new Partition(invalidOwnerSpec)),
     Error,
-    "maxOwners must be a positive integer",
+    "maxOwners must be a positive integer or null",
   );
 });
 
@@ -827,7 +827,7 @@ Deno.test("PartitionedBuffer - Sparse Facade Edge Cases", () => {
   assertThrows(
     () => buffer.addPartition(new Partition(invalidOwnerSpec)),
     Error,
-    "maxOwners must be a positive integer",
+    "maxOwners must be a positive integer or null",
   );
 });
 

@@ -72,7 +72,7 @@ export function isValidPartitionSpec<T extends SchemaSpec<T> | null>(spec: unkno
   const { name, schema = null, maxOwners = null } = spec as PartitionSpec<T>;
   if (!isValidName(name)) return false;
   if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners <= 0)) {
-    throw new Error("maxOwners must be a positive integer");
+    throw new Error("maxOwners must be a positive integer or null");
   }
   if (schema && !isSchema(schema)) return false;
   return true;
