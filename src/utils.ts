@@ -188,6 +188,7 @@ export const isValidTypedArrayValue = (
  * ```
  */
 export function disposeSparseArray<T extends TypedArray>(array: T): void {
+  // deno-lint-ignore no-explicit-any
   delete (array as any)[-1];
 }
 
@@ -214,6 +215,7 @@ export function disposeSparseArray<T extends TypedArray>(array: T): void {
  * ```
  */
 export function zeroArray<T extends TypedArray>(array: T): T {
+  // deno-lint-ignore no-explicit-any
   delete (array as any)[-1]; // Dispose SparseFacade or no-op for regular arrays
   array.fill(0);
   return array;
