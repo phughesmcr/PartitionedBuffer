@@ -5,8 +5,8 @@
  * @license     MIT
  */
 
-import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
 import { Partition, type PartitionSpec } from "./src/Partition.ts";
+import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
 import { getSchemaSize, isSchema, type Schema, type SchemaStorage } from "./src/Schema.ts";
 import { isValidName, type TypedArray, type TypedArrayConstructor } from "./src/utils.ts";
 
