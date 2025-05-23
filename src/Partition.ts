@@ -5,7 +5,7 @@
  * @license     MIT
  */
 
-import { getSchemaSize, isSchema, type Schema, type SchemaSpec, type SchemaStorage } from "./Schema.ts";
+import { getEntitySize, isSchema, type Schema, type SchemaSpec, type SchemaStorage } from "./Schema.ts";
 import { isValidName } from "./utils.ts";
 
 /**
@@ -104,7 +104,7 @@ export class Partition<T extends SchemaSpec<T> | null = null> {
     this.name = name;
     this.schema = schema as T extends SchemaSpec<infer U> ? Schema<U> : null;
     this.maxOwners = maxOwners ?? null;
-    this.size = schema ? getSchemaSize(schema) : 0;
+    this.size = schema ? getEntitySize(schema) : 0;
     this.isTag = (schema === null) as T extends null ? true : false;
   }
 }

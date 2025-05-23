@@ -1063,7 +1063,7 @@ Deno.test("PartitionedBuffer - Edge Cases", () => {
   assertThrows(
     () => new PartitionedBuffer(Number.MAX_SAFE_INTEGER, 16),
     SyntaxError,
-    "size must be a multiple of maxEntitiesPerPartition and a Uint32 number",
+    "size must be a Uint32 number",
   );
 
   // Test with non-integer maxEntitiesPerPartition
@@ -1333,7 +1333,7 @@ Deno.test("Schema - getSchemaSize", () => {
   // Simple schema
   const simpleSchema = { x: Float32Array, y: Float32Array };
   const simpleSize = getSchemaSize(simpleSchema);
-  assertEquals(simpleSize, 8); // 4 + 4 bytes, aligned
+  assertEquals(simpleSize, 16); // 8 + 8 bytes, each Float32Array aligned to 8 bytes due to MIN_ALIGNMENT
 
   // Mixed types schema
   const mixedSchema = {
@@ -1351,7 +1351,7 @@ Deno.test("Schema - getSchemaSize", () => {
     y: [Int32Array, 42] as [Int32ArrayConstructor, number],
   };
   const initialValueSize = getSchemaSize(initialValueSchema);
-  assertEquals(initialValueSize, 8); // same as without initial values
+  assertEquals(initialValueSize, 16); // 8 + 8 bytes, both properties aligned to 8 bytes due to MIN_ALIGNMENT
 
   // Empty schema - isSchema({}) returns false, so getSchemaSize returns NaN
   const emptySchema = {};
@@ -1368,7 +1368,7 @@ Deno.test("SparseFacade - Disposal mechanism", () => {
   const dense = new Int32Array([1, 2, 3, 4]);
   const sparse = sparseFacade(dense);
 
-  // Set some values
+  // Set some values - these will overwrite positions in the dense array
   sparse[10] = 42;
   sparse[20] = 84;
 
@@ -1376,11 +1376,15 @@ Deno.test("SparseFacade - Disposal mechanism", () => {
   assertEquals(sparse[10], 42);
   assertEquals(sparse[20], 84);
 
+  // Verify that the sparse values were stored in the dense array (first available slots)
+  assertEquals(dense[0], 42); // First sparse value went to dense[0]
+  assertEquals(dense[1], 84); // Second sparse value went to dense[1]
+
   // Dispose using delete facade[-1]
   const disposed = delete sparse[-1];
   assertEquals(disposed, true);
 
-  // Verify dense array is zeroed
+  // Verify dense array is zeroed after disposal
   assertEquals(Array.from(dense), [0, 0, 0, 0]);
 
   // Verify sparse facade is cleared
@@ -1479,7 +1483,7 @@ Deno.test("PartitionedBuffer - Specific error messages", () => {
   assertThrows(
     () => new PartitionedBuffer(-1, 8),
     SyntaxError,
-    "size must be a multiple of maxEntitiesPerPartition and a Uint32 number",
+    "size must be a Uint32 number",
   );
 
   assertThrows(

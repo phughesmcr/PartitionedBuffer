@@ -95,8 +95,34 @@ export function sparseFacade<T extends TypedArray>(dense: T): SparseFacade<T> {
   };
 
   return new Proxy(dense, {
-    get: (_target: T, key: string | symbol) => get(Number(key) as number),
-    set: (_target: T, key: string | symbol, value: number) => set(Number(key) as number, value),
-    deleteProperty: (_target: T, key: string | symbol) => deleteProperty(Number(key) as number),
+    get: (target: T, key: string | symbol) => {
+      if (typeof key === "string") {
+        const num = Number(key);
+        if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
+          return get(num);
+        }
+      }
+      return target[key as keyof T];
+    },
+    set: (_target: T, key: string | symbol, value: number) => {
+      if (typeof key === "string") {
+        const num = Number(key);
+        if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
+          return set(num, value);
+        }
+      }
+      // For non-numeric or invalid properties, return false to trigger throwing in strict mode
+      return false;
+    },
+    deleteProperty: (_target: T, key: string | symbol) => {
+      if (typeof key === "string") {
+        const num = Number(key);
+        if (!isNaN(num) && Number.isInteger(num) && (num >= 0 || num === -1)) {
+          return deleteProperty(num);
+        }
+      }
+      // For non-numeric or invalid properties, return false to trigger throwing in strict mode
+      return false;
+    },
   }) as SparseFacade<T>;
 }

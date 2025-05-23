@@ -63,7 +63,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   constructor(size: number, maxEntitiesPerPartition: number = size) {
     // Validate size
     if (!isUint32(size)) {
-      throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition and a Uint32 number");
+      throw new SyntaxError("size must be a Uint32 number");
     } else if (size <= 0) {
       throw new SyntaxError("size must be > 0");
     }

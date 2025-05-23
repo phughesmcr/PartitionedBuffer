@@ -29,16 +29,20 @@ class ParticleSystem {
   #activeParticles = 0;
 
   constructor(maxParticles: number) {
-    // Calculate bytes needed per partition
-    const positionBytes = maxParticles * 8;  // 2 float32s = 8 bytes
-    const velocityBytes = maxParticles * 8;  // 2 float32s = 8 bytes
-    const colorBytes = maxParticles * 8;     // 3 uint8s + 1 float32 ≈ 7 bytes
-    const lifeBytes = maxParticles * 8;      // 2 float32s = 8 bytes
-
-    // Total size needed with alignment padding
-    const bufferSize = (positionBytes + velocityBytes + colorBytes + lifeBytes) * 2;
-    
     this.#maxParticles = maxParticles;
+    
+    // Create buffer with generous space - PartitionedBuffer will calculate exact requirements
+    // Each schema property gets 8-byte alignment, so estimate conservatively
+    const estimatedBytesPerParticle = 64; // Conservative estimate for all properties with alignment
+    const bufferSize = maxParticles * estimatedBytesPerParticle;
+    
+    // Alternative: Calculate exact size requirements (more advanced)
+    // import { getEntitySize } from "../src/Schema.ts";
+    // const positionSize = getEntitySize(positionSchema) * maxParticles;
+    // const velocitySize = getEntitySize(velocitySchema) * maxParticles;
+    // const colorSize = getEntitySize(colorSchema) * maxParticles;
+    // const lifeSize = getEntitySize(lifeSchema) * maxParticles;
+    // const bufferSize = positionSize + velocitySize + colorSize + lifeSize + 1024; // Extra padding
     
     // Create buffer with space for all particles
     this.#buffer = new PartitionedBuffer(bufferSize, maxParticles);

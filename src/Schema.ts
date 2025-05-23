@@ -14,8 +14,8 @@ import {
   type TypedArrayConstructor,
 } from "./utils.ts";
 
-/** Maximum alignment in bytes for TypedArrays */
-const MAX_ALIGNMENT = 8;
+/** Minimum alignment in bytes for TypedArrays */
+const MIN_ALIGNMENT = 8;
 
 /**
  * Storage convenience object
@@ -98,7 +98,7 @@ const isValidSchemaEntry = (prop: [string, SchemaProperty]): boolean => {
  * Schema type guard
  * @param schema the object to test
  */
-export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<unknown> | null> => {
+export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<any>> | null => {
   if (schema === null) return true; // Explicitly handle null schemas
   try {
     if (!isObject(schema)) return false;
@@ -111,11 +111,11 @@ export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<unknown> 
 };
 
 /**
- * Calculate the aligned size of a schema in bytes
+ * Calculate the aligned size of a single entity in bytes
  * @param schema the schema to calculate the size of
- * @returns the size in bytes
+ * @returns the size in bytes for one entity
  */
-export function getSchemaSize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
+export function getEntitySize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
   if (!schema || !isSchema(schema)) return Number.NaN;
 
   let size = 0;
@@ -127,23 +127,24 @@ export function getSchemaSize<T extends SchemaSpec<T>>(schema: Schema<T>): numbe
   // First pass: find maximum alignment requirement
   for (const [name, value] of schemaEntries) {
     const Ctr = Array.isArray(value) ? value[0] : value;
-    const alignment = Ctr.BYTES_PER_ELEMENT;
+    const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
 
     // Validate alignment is power of 2
     if ((alignment & (alignment - 1)) !== 0) {
       throw new Error(`Invalid alignment ${alignment} for property "${name}"`);
     }
 
-    maxAlignment = Math.max(maxAlignment, Math.min(alignment, MAX_ALIGNMENT));
+    maxAlignment = Math.max(maxAlignment, alignment);
   }
 
   // Second pass: calculate aligned size
   for (const [name, value] of schemaEntries) {
     const Ctr = Array.isArray(value) ? value[0] : value;
+    const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
     const bytes = Ctr.BYTES_PER_ELEMENT;
 
     // Align current offset
-    const alignedOffset = (size + bytes - 1) & ~(bytes - 1);
+    const alignedOffset = (size + alignment - 1) & ~(alignment - 1);
 
     // Check for overflow
     if (alignedOffset < size || alignedOffset > Number.MAX_SAFE_INTEGER - bytes) {
