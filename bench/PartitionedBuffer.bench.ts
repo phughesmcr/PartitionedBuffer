@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any
 /// <reference lib="deno.ns" />
 /// <reference lib="dom" />
 
@@ -529,7 +530,7 @@ Deno.bench({
     buffer.addPartition(partition);
 
     for (let i = 0; i < 1000; i++) {
-      buffer.hasPartition(partition);
+      buffer.hasPartition(partition.name);
     }
   },
 });
@@ -1020,9 +1021,9 @@ Deno.bench({
 
     // Simulate physics update across partitions
     for (let i = 0; i < 16; i++) {
-      posPartition.partitions.x[i] += velPartition.partitions.x?.[i] ?? 0;
-      posPartition.partitions.y[i] += velPartition.partitions.y?.[i] ?? 0;
-      posPartition.partitions.z[i] += velPartition.partitions.z?.[i] ?? 0;
+      posPartition.partitions.x[i]! += velPartition.partitions.x?.[i] ?? 0;
+      posPartition.partitions.y[i]! += velPartition.partitions.y?.[i] ?? 0;
+      posPartition.partitions.z[i]! += velPartition.partitions.z?.[i] ?? 0;
     }
   },
 });
@@ -1088,9 +1089,9 @@ Deno.bench({
       healthPartition.partitions.max[entity * 10] = 100;
 
       // Update entity
-      posPartition.partitions.x[entity * 10] += 1;
-      posPartition.partitions.y[entity * 10] += 1;
-      healthPartition.partitions.current[entity * 10] -= 10;
+      posPartition.partitions.x[entity * 10]! += 1;
+      posPartition.partitions.y[entity * 10]! += 1;
+      healthPartition.partitions.current[entity * 10]! -= 10;
 
       // Destroy entity (every other one)
       if (entity % 2 === 0) {
@@ -1147,13 +1148,13 @@ Deno.bench({
     // Simulate game loop operations
     for (let i = 0; i < 64; i++) {
       // Physics system
-      transform.partitions.x[i] += physics.partitions.vx?.[i] ?? 0;
-      transform.partitions.y[i] += physics.partitions.vy?.[i] ?? 0;
+      transform.partitions.x[i]! += physics.partitions.vx?.[i] ?? 0;
+      transform.partitions.y[i]! += physics.partitions.vy?.[i] ?? 0;
 
       // Rotation update
-      transform.partitions.rotation[i] += 0.01;
+      transform.partitions.rotation[i]! += 0.01;
       if ((transform.partitions.rotation?.[i] ?? 0) > Math.PI * 2) {
-        transform.partitions.rotation[i] = 0;
+        transform.partitions.rotation[i]! = 0;
       }
 
       // Render system queries (values used for simulation)
@@ -1162,10 +1163,10 @@ Deno.bench({
 
       // Collision detection (simple bounds check)
       if ((transform.partitions.x?.[i] ?? 0) < 0 || (transform.partitions.x?.[i] ?? 0) > 800) {
-        physics.partitions.vx[i] *= -1;
+        physics.partitions.vx[i]! *= -1;
       }
       if ((transform.partitions.y?.[i] ?? 0) < 0 || (transform.partitions.y?.[i] ?? 0) > 600) {
-        physics.partitions.vy[i] *= -1;
+        physics.partitions.vy[i]! *= -1;
       }
     }
   },
@@ -1196,6 +1197,7 @@ Deno.bench({
           name: componentType.name,
           schema: componentType.schema,
         };
+
         const partition = buffer.addPartition(new Partition(spec as PartitionSpec<any>));
         if (partition) {
           partitions.push({ name: spec.name, partition });
