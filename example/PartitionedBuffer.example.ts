@@ -30,12 +30,12 @@ class ParticleSystem {
 
   constructor(maxParticles: number) {
     this.#maxParticles = maxParticles;
-    
+
     // Create buffer with generous space - PartitionedBuffer will calculate exact requirements
     // Each schema property gets 8-byte alignment, so estimate conservatively
     const estimatedBytesPerParticle = 64; // Conservative estimate for all properties with alignment
     const bufferSize = maxParticles * estimatedBytesPerParticle;
-    
+
     // Alternative: Calculate exact size requirements (more advanced)
     // import { getEntitySize } from "../src/Schema.ts";
     // const positionSize = getEntitySize(positionSchema) * maxParticles;
@@ -43,15 +43,15 @@ class ParticleSystem {
     // const colorSize = getEntitySize(colorSchema) * maxParticles;
     // const lifeSize = getEntitySize(lifeSchema) * maxParticles;
     // const bufferSize = positionSize + velocitySize + colorSize + lifeSize + 1024; // Extra padding
-    
+
     // Create buffer with space for all particles
     this.#buffer = new PartitionedBuffer(bufferSize, maxParticles);
 
     // Add partitions for each property type
-    this.#buffer.addPartition({ name: "position", schema: positionSchema });
-    this.#buffer.addPartition({ name: "velocity", schema: velocitySchema });
-    this.#buffer.addPartition({ name: "color", schema: colorSchema });
-    this.#buffer.addPartition({ name: "life", schema: lifeSchema });
+    this.#buffer.addPartition<Position>({ name: "position", schema: positionSchema });
+    this.#buffer.addPartition<Velocity>({ name: "velocity", schema: velocitySchema });
+    this.#buffer.addPartition<Color>({ name: "color", schema: colorSchema });
+    this.#buffer.addPartition<Life>({ name: "life", schema: lifeSchema });
   }
 
   /**
@@ -74,17 +74,18 @@ class ParticleSystem {
     const index = this.#activeParticles++;
 
     // Get all partitions
-    const position = this.#buffer.getPartition("position")!;
-    const velocity = this.#buffer.getPartition("velocity")!;
-    const color = this.#buffer.getPartition("color")!;
-    const life = this.#buffer.getPartition("life")!;
+    const position = this.#buffer.getPartition<Position>("position")!;
+    const velocity = this.#buffer.getPartition<Velocity>("velocity")!;
+    const color = this.#buffer.getPartition<Color>("color")!;
+    const life = this.#buffer.getPartition<Life>("life")!;
 
-    // Set initial values
+    // Set initial values directly
     position.partitions.x[index] = x;
     position.partitions.y[index] = y;
 
-    velocity.partitions.vx[index] = vx;
-    velocity.partitions.vy[index] = vy;
+    // or use the set method (will throw an error if the index is out of bounds)
+    velocity.set("vx", index, vx);
+    velocity.set("vy", index, vy);
 
     color.partitions.r[index] = r;
     color.partitions.g[index] = g;
@@ -102,31 +103,31 @@ class ParticleSystem {
    * @param deltaTime Time since last update in seconds
    */
   update(deltaTime: number): void {
-    const position = this.#buffer.getPartition("position")!;
-    const velocity = this.#buffer.getPartition("velocity")!;
-    const color = this.#buffer.getPartition("color")!;
-    const life = this.#buffer.getPartition("life")!;
+    const position = this.#buffer.getPartition<Position>("position")!;
+    const velocity = this.#buffer.getPartition<Velocity>("velocity")!;
+    const color = this.#buffer.getPartition<Color>("color")!;
+    const life = this.#buffer.getPartition<Life>("life")!;
 
     let aliveCount = 0;
 
     // Update each particle
     for (let i = 0; i < this.#activeParticles; i++) {
       // Update life
-      life.partitions.current[i] -= deltaTime;
+      life.partitions.current[i]! -= deltaTime;
 
-      if (life.partitions.current[i] <= 0) {
+      if (life.partitions.current[i]! <= 0) {
         continue;
       }
 
       // Update position based on velocity
-      position.partitions.x[i] += velocity.partitions.vx[i] * deltaTime;
-      position.partitions.y[i] += velocity.partitions.vy[i] * deltaTime;
+      position.partitions.x[i]! += velocity.partitions.vx[i]! * deltaTime;
+      position.partitions.y[i]! += velocity.partitions.vy[i]! * deltaTime;
 
       // Apply gravity
-      velocity.partitions.vy[i] += 9.81 * deltaTime;
+      velocity.partitions.vy[i]! += 9.81 * deltaTime;
 
       // Update alpha based on remaining life
-      const lifeRatio = life.partitions.current[i] / life.partitions.total[i];
+      const lifeRatio = life.partitions.current[i]! / life.partitions.total[i]!;
       color.partitions.a[i] = lifeRatio;
 
       // Compact alive particles to the front of the buffer
@@ -143,28 +144,28 @@ class ParticleSystem {
    * Move a particle from one index to another
    */
   #moveParticle(fromIndex: number, toIndex: number): void {
-    const position = this.#buffer.getPartition("position")!;
-    const velocity = this.#buffer.getPartition("velocity")!;
-    const color = this.#buffer.getPartition("color")!;
-    const life = this.#buffer.getPartition("life")!;
+    const position = this.#buffer.getPartition<Position>("position")!;
+    const velocity = this.#buffer.getPartition<Velocity>("velocity")!;
+    const color = this.#buffer.getPartition<Color>("color")!;
+    const life = this.#buffer.getPartition<Life>("life")!;
 
     // Move position
-    position.partitions.x[toIndex] = position.partitions.x[fromIndex];
-    position.partitions.y[toIndex] = position.partitions.y[fromIndex];
+    position.partitions.x[toIndex] = position.partitions.x[fromIndex]!;
+    position.partitions.y[toIndex] = position.partitions.y[fromIndex]!;
 
     // Move velocity
-    velocity.partitions.vx[toIndex] = velocity.partitions.vx[fromIndex];
-    velocity.partitions.vy[toIndex] = velocity.partitions.vy[fromIndex];
+    velocity.partitions.vx[toIndex] = velocity.partitions.vx[fromIndex]!;
+    velocity.partitions.vy[toIndex] = velocity.partitions.vy[fromIndex]!;
 
     // Move color
-    color.partitions.r[toIndex] = color.partitions.r[fromIndex];
-    color.partitions.g[toIndex] = color.partitions.g[fromIndex];
-    color.partitions.b[toIndex] = color.partitions.b[fromIndex];
-    color.partitions.a[toIndex] = color.partitions.a[fromIndex];
+    color.partitions.r[toIndex] = color.partitions.r[fromIndex]!;
+    color.partitions.g[toIndex] = color.partitions.g[fromIndex]!;
+    color.partitions.b[toIndex] = color.partitions.b[fromIndex]!;
+    color.partitions.a[toIndex] = color.partitions.a[fromIndex]!;
 
     // Move life
-    life.partitions.current[toIndex] = life.partitions.current[fromIndex];
-    life.partitions.total[toIndex] = life.partitions.total[fromIndex];
+    life.partitions.current[toIndex] = life.partitions.current[fromIndex]!;
+    life.partitions.total[toIndex] = life.partitions.total[fromIndex]!;
   }
 
   /**
@@ -193,7 +194,7 @@ class ParticleSystem {
 // Example usage demonstrating particle system simulation
 function runParticleDemo() {
   console.log("Starting particle system simulation...\n");
-  
+
   const particles = new ParticleSystem(4_000);
   let isRunning = true;
   const simulationTime = 5; // Run for 5 seconds
@@ -203,11 +204,15 @@ function runParticleDemo() {
   for (let i = 0; i < 1000; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 50 + Math.random() * 50;
-    
+
     particles.spawn(
-      0, 0, // position
-      Math.cos(angle) * speed, Math.sin(angle) * speed, // velocity
-      255, 100 + Math.random() * 155, 0, // color
+      0,
+      0, // position
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed, // velocity
+      255,
+      100 + Math.random() * 155,
+      0, // color
       2 + Math.random() * 2, // lifespan
     );
   }
@@ -215,14 +220,14 @@ function runParticleDemo() {
 
   // Simulation loop
   console.log("Starting simulation...");
-  
-  let lastTime = performance.now() / 1000;
-  let startTime = lastTime;
+
+  let lastTime = Date.now() / 1000;
+  const startTime = lastTime;
 
   function animate() {
     if (!isRunning) return;
 
-    const currentTime = performance.now() / 1000;
+    const currentTime = Date.now() / 1000;
     const deltaTime = currentTime - lastTime;
     const elapsedTime = currentTime - startTime;
     lastTime = currentTime;
@@ -235,24 +240,19 @@ function runParticleDemo() {
         time: elapsedTime.toFixed(1),
         activeParticles: particles.activeParticles,
         maxParticles: particles.maxParticles,
-        utilizationPct: ((particles.activeParticles / particles.maxParticles) * 100).toFixed(1)
+        utilizationPct: ((particles.activeParticles / particles.maxParticles) * 100).toFixed(1),
       };
 
       console.log(
         `Time: ${stats.time}s | ` +
-        `Active: ${stats.activeParticles} | ` +
-        `Max: ${stats.maxParticles} | ` +
-        `Utilization: ${stats.utilizationPct}%`
+          `Active: ${stats.activeParticles} | ` +
+          `Max: ${stats.maxParticles} | ` +
+          `Utilization: ${stats.utilizationPct}%`,
       );
     }
 
     if (elapsedTime < simulationTime) {
-      if (typeof requestAnimationFrame !== 'undefined') {
-        requestAnimationFrame(animate);
-      } else {
-        // Fallback to setTimeout for environments without requestAnimationFrame
-        setTimeout(animate, 1000 / 60);
-      }
+      setTimeout(animate, 1000 / 60);
     } else {
       console.log("\nSimulation complete!");
       isRunning = false;
@@ -260,12 +260,8 @@ function runParticleDemo() {
   }
 
   // Start animation
-  if (typeof requestAnimationFrame !== 'undefined') {
-    requestAnimationFrame(animate);
-  } else {
-    setTimeout(animate, 1000 / 60);
-  }
+  setTimeout(animate, 1000 / 60);
 }
 
 // Run the demo
-runParticleDemo(); 
+runParticleDemo();

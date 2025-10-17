@@ -70,7 +70,7 @@ export function sparseFacade<T extends TypedArray>(dense: T): SparseFacade<T> {
     const idx = sparse.get(entity) ?? available.acquire();
     if (idx === -1) return false;
     dense[idx] = value;
-    sparse.set(entity, idx);
+    sparse.set(entity, idx); // the entity's index in the sparse array
     return true;
   };
 
@@ -95,34 +95,31 @@ export function sparseFacade<T extends TypedArray>(dense: T): SparseFacade<T> {
   };
 
   return new Proxy(dense, {
-    get: (target: T, key: string | symbol) => {
+    get: (target: T, key: string | symbol, _receiver: unknown) => {
       if (typeof key === "string") {
         const num = Number(key);
         if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
           return get(num);
         }
       }
-      return target[key as keyof T];
+      // Ensure methods like fill() receive the underlying typed array as receiver
+      return Reflect.get(target, key, target);
     },
     set: (_target: T, key: string | symbol, value: number) => {
-      if (typeof key === "string") {
-        const num = Number(key);
-        if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
-          return set(num, value);
-        }
-      }
       // For non-numeric or invalid properties, return false to trigger throwing in strict mode
-      return false;
+      if (typeof key !== "string") return false;
+      const num = Number(key);
+      if (isNaN(num) || !Number.isInteger(num) || num < 0) return false;
+      return set(num, value);
     },
     deleteProperty: (_target: T, key: string | symbol) => {
-      if (typeof key === "string") {
-        const num = Number(key);
-        if (!isNaN(num) && Number.isInteger(num) && (num >= 0 || num === -1)) {
-          return deleteProperty(num);
-        }
-      }
+      // Special case: -1 is the disposal key
+      if (key === "-1") return deleteProperty(-1);
       // For non-numeric or invalid properties, return false to trigger throwing in strict mode
-      return false;
+      if (typeof key !== "string") return false;
+      const num = Number(key);
+      if (isNaN(num) || !Number.isInteger(num) || num < 0) return false;
+      return deleteProperty(num);
     },
   }) as SparseFacade<T>;
 }

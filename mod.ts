@@ -1,13 +1,13 @@
 /**
- * @module      PartitionedBuffer
  * @description A convenient way to manage a data in ArrayBuffers.
  * @copyright   2024 the PartitionedBuffer authors. All rights reserved.
  * @license     MIT
+ * @module      PartitionedBuffer
  */
 
-import { Partition, type PartitionSpec } from "./src/Partition.ts";
+import { Partition, type PartitionSpec, type PartitionStorage } from "./src/Partition.ts";
 import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
-import { getEntitySize, isSchema, type Schema, type SchemaStorage } from "./src/Schema.ts";
+import { getEntitySize, isSchema, type Schema } from "./src/Schema.ts";
 import { isValidName, type TypedArray, type TypedArrayConstructor } from "./src/utils.ts";
 
 /**
@@ -15,4 +15,4 @@ import { isValidName, type TypedArray, type TypedArrayConstructor } from "./src/
  * PartitionedBuffer is a convenient way to manage a data in ArrayBuffers.
  */
 export { getEntitySize, isSchema, isValidName, Partition, PartitionedBuffer };
-export type { PartitionSpec, Schema, SchemaStorage, TypedArray, TypedArrayConstructor };
+export type { PartitionSpec, PartitionStorage, Schema, TypedArray, TypedArrayConstructor };

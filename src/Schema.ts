@@ -24,6 +24,8 @@ export type SchemaStorage<T> = {
   byteOffset: number;
   byteLength: number;
   partitions: Record<keyof T, TypedArray>;
+  get: T extends SchemaSpec<infer U> ? (partition: keyof U, index: number) => U[keyof U] : never;
+  set: T extends SchemaSpec<infer U> ? (partition: keyof U, index: number, value: U[keyof U]) => void : never;
 };
 
 /**
@@ -98,6 +100,7 @@ const isValidSchemaEntry = (prop: [string, SchemaProperty]): boolean => {
  * Schema type guard
  * @param schema the object to test
  */
+// deno-lint-ignore no-explicit-any
 export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<any>> | null => {
   if (schema === null) return true; // Explicitly handle null schemas
   try {

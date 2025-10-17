@@ -197,7 +197,7 @@ export function disposeSparseArray<T extends TypedArray>(array: T): void {
  * Zero out a typed array.
  *
  * For SparseFacade arrays, this also disposes the sparse mapping by calling the
- * internal disposal mechanism before zeroing the underlying dense array.
+ * internal disposal mechanism which zeroes the underlying dense array.
  * For regular TypedArrays, this simply fills the array with zeros.
  *
  * @param array the array to zero out
@@ -216,8 +216,17 @@ export function disposeSparseArray<T extends TypedArray>(array: T): void {
  * ```
  */
 export function zeroArray<T extends TypedArray>(array: T): T {
-  // deno-lint-ignore no-explicit-any
-  delete (array as any)[-1]; // Dispose SparseFacade or no-op for regular arrays
-  array.fill(0);
+  // Try to get the underlying target if it's a proxy
+  try {
+    // deno-lint-ignore no-explicit-any
+    delete (array as any)[-1]; // Dispose SparseFacade (which zeros) or no-op for regular arrays
+    // If array.fill works without error, use it (handles both regular arrays and post-disposal proxies)
+    array.fill(0);
+  } catch (error) {
+    // If fill() fails (shouldn't happen with our fix), the disposal already zeroed the underlying array
+    if (!(error instanceof TypeError && error.message.includes("not a typed array"))) {
+      throw error; // Re-throw unexpected errors
+    }
+  }
   return array;
 }

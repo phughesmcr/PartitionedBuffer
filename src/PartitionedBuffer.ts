@@ -1,8 +1,8 @@
 /**
- * @module      PartitionedBuffer
  * @description A convenient way to manage a data in ArrayBuffers.
  * @copyright   2024 the PartitionedBuffer authors. All rights reserved.
  * @license     MIT
+ * @module      PartitionedBuffer
  */
 
 import { Partition, type PartitionSpec, type PartitionStorage } from "./Partition.ts";
@@ -26,7 +26,10 @@ function clearAllPartitionArrays<T extends SchemaSpec<T>>(
   partition: PartitionStorage<T> | null,
 ): PartitionStorage<T> | null {
   if (!partition) return null;
-  Object.values<TypedArray>(partition.partitions).forEach(zeroArray);
+  const arrays = Object.values<TypedArray>(partition.partitions);
+  for (const array of arrays) {
+    zeroArray(array);
+  }
   return partition;
 }
 
@@ -39,7 +42,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   static readonly MAX_PARTITION_SIZE = 1073741824 as const; // 1GB (1024 * 1024 * 1024)
 
   /** The maximum possible number of owners per partition */
-  readonly #maxEntitiesPerPartition: number;
+  readonly maxEntitiesPerPartition: number;
 
   /** The partitions in the buffer */
   // deno-lint-ignore no-explicit-any
@@ -73,7 +76,7 @@ export class PartitionedBuffer extends ArrayBuffer {
       if (!isUint32(maxEntitiesPerPartition)) {
         throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
       } else if (maxEntitiesPerPartition <= 0) {
-        throw new SyntaxError("maxEntitiesPerPartition must be > 0");
+        throw new SyntaxError("maxEntitiesPerPartition must be >= 8");
       } else if (maxEntitiesPerPartition < 8) {
         throw new SyntaxError(
           "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
@@ -84,15 +87,10 @@ export class PartitionedBuffer extends ArrayBuffer {
     }
 
     super(size);
+    this.#partitions = new Map();
     this.#partitionsByNames = new Map();
     this.#offset = 0;
-    this.#partitions = new Map();
-    this.#maxEntitiesPerPartition = maxEntitiesPerPartition;
-  }
-
-  /** The length of each row in the buffer */
-  get maxEntitiesPerPartition(): number {
-    return this.#maxEntitiesPerPartition;
+    this.maxEntitiesPerPartition = maxEntitiesPerPartition;
   }
 
   #alignOffset(alignment: number): void {
@@ -125,7 +123,8 @@ export class PartitionedBuffer extends ArrayBuffer {
     const bytesPerElement = Ctr.BYTES_PER_ELEMENT;
 
     // Pre-calculate required space
-    const elements = this.#maxEntitiesPerPartition;
+    // Use maxOwners if specified (for sparse storage), otherwise maxEntitiesPerPartition
+    const elements = maxOwners ?? this.maxEntitiesPerPartition;
     const requiredBytes = elements * bytesPerElement;
 
     // Validate size
@@ -192,17 +191,18 @@ export class PartitionedBuffer extends ArrayBuffer {
   /**
    * Calculates the total aligned size needed for a schema with validation
    */
-  #calculateAlignedSize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
+  #calculateAlignedSize<T extends SchemaSpec<T>>(schema: Schema<T>, maxOwners: number | null = null): number {
     if (!schema) return 0;
 
     let alignedSize = 0;
     let lastAlignment: number = PartitionedBuffer.MIN_ALIGNMENT;
+    const elements = maxOwners ?? this.maxEntitiesPerPartition;
 
     for (const [name, value] of Object.entries(schema)) {
       this.#validateSchemaEntry(name, value as SchemaProperty);
       const Ctr = Array.isArray(value) ? value[0] : value;
       const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, PartitionedBuffer.MIN_ALIGNMENT);
-      const partitionSize = this.#maxEntitiesPerPartition * Ctr.BYTES_PER_ELEMENT;
+      const partitionSize = elements * Ctr.BYTES_PER_ELEMENT;
 
       // Validate partition size
       if (partitionSize > PartitionedBuffer.MAX_PARTITION_SIZE) {
@@ -258,8 +258,8 @@ export class PartitionedBuffer extends ArrayBuffer {
     // Validate parameters
     this.#validatePartitionParams(partition, name, maxOwners);
 
-    // Calculate required space
-    const alignedSize = this.#calculateAlignedSize(schema);
+    // Calculate required space (use maxOwners if specified)
+    const alignedSize = this.#calculateAlignedSize(schema, maxOwners);
     if (alignedSize > this.getFreeSpace()) {
       const required = alignedSize - this.getFreeSpace();
       const hint = `(Size: ${alignedSize}; Available: ${this.getFreeSpace()}; Required: ${required})`;
@@ -271,13 +271,28 @@ export class PartitionedBuffer extends ArrayBuffer {
 
     // Create partitions
     const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
-    const partitions = schemaEntries.map((entry) => this.#createPartition(entry, maxOwners));
+    const partitions = Object.fromEntries(
+      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners)),
+    ) as Record<keyof T, TypedArray>;
 
     // Create and store the partition storage
     const result = {
       byteLength: alignedSize,
       byteOffset: startOffset,
-      partitions: Object.fromEntries(partitions) as Record<keyof T, TypedArray>,
+      partitions,
+      get: (partition: keyof T, index: number): number | undefined => {
+        return partitions[partition]?.[index] ?? undefined;
+      },
+      set: (partition: keyof T, index: number, value: number): void => {
+        const partitionStorage = partitions[partition];
+        if (!partitionStorage) {
+          throw new Error(`Partition ${String(partition)} not found`);
+        }
+        if (index < 0 || index >= partitionStorage.length) {
+          throw new RangeError(`Index ${index} out of bounds for partition ${String(partition)}`);
+        }
+        partitionStorage[index] = value;
+      },
     } as unknown as PartitionStorage<T>;
 
     this.#partitions.set(partition, result);

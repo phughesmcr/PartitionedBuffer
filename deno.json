@@ -23,7 +23,6 @@
     "strict": true,
     "verbatimModuleSyntax": true
   },
-  "exclude": ["example/**/*.ts"],
   "fmt": {
     "indentWidth": 2,
     "lineWidth": 120,
@@ -34,12 +33,12 @@
     "exclude": ["*.md", "LICENSE"]
   },
   "imports": {
-    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.5.1"
+    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.6.1"
   },
   "tasks": {
     "example": {
-      "description": "Run the example",
-      "command": "deno run example/PartitionedBuffer.example.ts"
+      "description": "Run the fireworks ASCII demo",
+      "command": "deno run -A example/Fireworks.example.ts"
     },
     "prep": {
       "description": "Format, lint, and check the codebase",
