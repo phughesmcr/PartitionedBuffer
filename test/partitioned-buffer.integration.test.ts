@@ -552,3 +552,60 @@ Deno.test("PartitionedBuffer - Complex alignment scenarios", () => {
     assertEquals(partition.partitions.byte4[0], 4);
   }
 });
+
+Deno.test("PartitionedBuffer - Zero-allocation mode with maxEntityId", () => {
+  const buffer = new PartitionedBuffer(2048, 64);
+
+  type Vec2 = { x: number; y: number };
+  const zeroAllocSpec: PartitionSpec<Vec2> = {
+    name: "zeroAllocPosition",
+    schema: {
+      x: Float32Array,
+      y: Float32Array,
+    },
+    maxOwners: 10, // Only 10 entities can have this component at once
+    maxEntityId: 1000, // Entity IDs are bounded by world size (zero-allocation mode)
+  };
+
+  const partition = buffer.addPartition(new Partition(zeroAllocSpec));
+  assertEquals(partition !== null, true);
+
+  if (partition) {
+    // Verify dense arrays are sized to maxOwners (10)
+    assertEquals(partition.partitions.x.length, 10);
+    assertEquals(partition.partitions.y.length, 10);
+
+    // Test writing with entity IDs within maxEntityId bounds
+    partition.partitions.x[100] = 1.5;
+    partition.partitions.y[100] = 2.5;
+    partition.partitions.x[500] = 3.5;
+    partition.partitions.y[500] = 4.5;
+
+    assertEquals(partition.partitions.x[100], 1.5);
+    assertEquals(partition.partitions.y[100], 2.5);
+    assertEquals(partition.partitions.x[500], 3.5);
+    assertEquals(partition.partitions.y[500], 4.5);
+
+    // Test entity ID at maxEntityId boundary
+    partition.partitions.x[1000] = 5.5;
+    assertEquals(partition.partitions.x[1000], 5.5);
+
+    // Test entity ID beyond maxEntityId fails
+    try {
+      partition.partitions.x[1001] = 6.5;
+      assertEquals(false, true, "Should have thrown");
+    } catch (error) {
+      assertEquals(error instanceof TypeError, true);
+    }
+    assertEquals(partition.partitions.x[1001], undefined);
+
+    // Test deletion
+    const deleted = delete partition.partitions.x[100];
+    assertEquals(deleted, true);
+    assertEquals(partition.partitions.x[100], undefined);
+
+    // Verify slot can be reused
+    partition.partitions.x[750] = 7.5;
+    assertEquals(partition.partitions.x[750], 7.5);
+  }
+});

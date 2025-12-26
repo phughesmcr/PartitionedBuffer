@@ -21,14 +21,17 @@ import {
  * Clear all partitions in a buffer
  * @param partition the partition to clear
  * @returns the partition
+ * @note Uses for...in to avoid Object.values() allocation
  */
 function clearAllPartitionArrays<T extends SchemaSpec<T>>(
   partition: PartitionStorage<T> | null,
 ): PartitionStorage<T> | null {
   if (!partition) return null;
-  const arrays = Object.values<TypedArray>(partition.partitions);
-  for (const array of arrays) {
-    zeroArray(array);
+  // Use for...in to avoid Object.values() allocation
+  for (const key in partition.partitions) {
+    if (Object.prototype.hasOwnProperty.call(partition.partitions, key)) {
+      zeroArray(partition.partitions[key as keyof typeof partition.partitions]);
+    }
   }
   return partition;
 }
@@ -75,8 +78,6 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (maxEntitiesPerPartition !== size) {
       if (!isUint32(maxEntitiesPerPartition)) {
         throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
-      } else if (maxEntitiesPerPartition <= 0) {
-        throw new SyntaxError("maxEntitiesPerPartition must be >= 8");
       } else if (maxEntitiesPerPartition < 8) {
         throw new SyntaxError(
           "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
@@ -114,6 +115,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   #createPartition<T extends SchemaSpec<T> | null>(
     [name, value]: [keyof T, SchemaProperty],
     maxOwners: number | null = null,
+    maxEntityId: number | null = null,
   ): [keyof T, TypedArray] {
     // Validate schema entry
     this.#validateSchemaEntry(String(name), value);
@@ -165,7 +167,12 @@ export class PartitionedBuffer extends ArrayBuffer {
 
     this.#offset += requiredBytes;
 
-    return [name, maxOwners ? sparseFacade(typedArray) : typedArray];
+    // Wrap with SparseFacade if maxOwners is specified
+    // Use zero-allocation mode if maxEntityId is also specified
+    if (maxOwners) {
+      return [name, sparseFacade(typedArray, maxEntityId ?? undefined)];
+    }
+    return [name, typedArray];
   }
 
   /**
@@ -246,7 +253,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   ): PartitionStorage<T> {
     // Convert spec to internal Partition instance
     const partition = specOrPartition instanceof Partition ? specOrPartition : new Partition(specOrPartition);
-    const { name, schema = null, maxOwners = null } = partition;
+    const { name, schema = null, maxOwners = null, maxEntityId = null } = partition;
 
     if (!schema) return null as PartitionStorage<T>;
 
@@ -270,9 +277,10 @@ export class PartitionedBuffer extends ArrayBuffer {
     const startOffset = this.#offset;
 
     // Create partitions
+    // Note: maxEntityId enables zero-allocation sparse storage when specified with maxOwners
     const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
     const partitions = Object.fromEntries(
-      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners)),
+      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners, maxEntityId)),
     ) as Record<keyof T, TypedArray>;
 
     // Create and store the partition storage

@@ -33,7 +33,7 @@
     "exclude": ["*.md", "LICENSE"]
   },
   "imports": {
-    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.6.1"
+    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.6.2"
   },
   "tasks": {
     "example": {

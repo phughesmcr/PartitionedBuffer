@@ -407,8 +407,8 @@ Deno.test("PartitionedBuffer - maxOwners validation", () => {
 
   assertThrows(
     () => buffer.addPartition(new Partition(zeroOwnerSpec)),
-    Error,
-    "maxOwners must be a positive integer or null",
+    SyntaxError,
+    "Invalid partition specification",
   );
 
   // maxOwners = -1 should throw
@@ -420,8 +420,8 @@ Deno.test("PartitionedBuffer - maxOwners validation", () => {
 
   assertThrows(
     () => buffer.addPartition(new Partition(negativeOwnerSpec)),
-    Error,
-    "maxOwners must be a positive integer or null",
+    SyntaxError,
+    "Invalid partition specification",
   );
 
   // maxOwners = 1.5 should throw
@@ -433,8 +433,8 @@ Deno.test("PartitionedBuffer - maxOwners validation", () => {
 
   assertThrows(
     () => buffer.addPartition(new Partition(decimalOwnerSpec)),
-    Error,
-    "maxOwners must be a positive integer or null",
+    SyntaxError,
+    "Invalid partition specification",
   );
 });
 

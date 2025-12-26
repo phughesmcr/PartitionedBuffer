@@ -1172,6 +1172,265 @@ Deno.bench({
   },
 });
 
+// =============================================================================
+// ZERO-ALLOCATION MODE BENCHMARKS
+// =============================================================================
+
+Deno.bench({
+  name: "SparseFacade - Map-based mode (arbitrary entity IDs)",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    // Map-based: no maxEntityId specified
+    const spec: PartitionSpec<Schema> = {
+      name: "mapBased",
+      schema: { value: Float32Array },
+      maxOwners: 16,
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Simulate entity operations with arbitrary IDs
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 1000] = i * 1.5; // Large entity IDs
+    }
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 1000]; // Read
+    }
+    for (let i = 0; i < 8; i++) {
+      delete partition.partitions.value[i * 1000]; // Delete half
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Zero-allocation mode (bounded entity IDs)",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    // Zero-allocation: maxEntityId specified
+    const spec: PartitionSpec<Schema> & { maxEntityId: number } = {
+      name: "zeroAlloc",
+      schema: { value: Float32Array },
+      maxOwners: 16,
+      maxEntityId: 20000, // Pre-allocated sparse array
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Same operations as Map-based for fair comparison
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 1000] = i * 1.5;
+    }
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 1000];
+    }
+    for (let i = 0; i < 8; i++) {
+      delete partition.partitions.value[i * 1000];
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Zero-allocation high-frequency write",
+  fn: () => {
+    const buffer = new PartitionedBuffer(2048, 128);
+    type Schema = { x: number; y: number };
+    const spec: PartitionSpec<Schema> & { maxEntityId: number } = {
+      name: "zeroAllocFrequent",
+      schema: { x: Float32Array, y: Float32Array },
+      maxOwners: 32,
+      maxEntityId: 10000,
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // High-frequency updates (typical game loop pattern)
+    for (let frame = 0; frame < 10; frame++) {
+      for (let entity = 0; entity < 32; entity++) {
+        const entityId = entity * 100;
+        partition.partitions.x[entityId] = Math.sin(frame + entity);
+        partition.partitions.y[entityId] = Math.cos(frame + entity);
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Map-based high-frequency write",
+  fn: () => {
+    const buffer = new PartitionedBuffer(2048, 128);
+    type Schema = { x: number; y: number };
+    const spec: PartitionSpec<Schema> = {
+      name: "mapBasedFrequent",
+      schema: { x: Float32Array, y: Float32Array },
+      maxOwners: 32,
+      // No maxEntityId - uses Map
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Same pattern for comparison
+    for (let frame = 0; frame < 10; frame++) {
+      for (let entity = 0; entity < 32; entity++) {
+        const entityId = entity * 100;
+        partition.partitions.x[entityId] = Math.sin(frame + entity);
+        partition.partitions.y[entityId] = Math.cos(frame + entity);
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Zero-allocation entity churn",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    const spec: PartitionSpec<Schema> & { maxEntityId: number } = {
+      name: "churnZeroAlloc",
+      schema: { value: Int32Array },
+      maxOwners: 8,
+      maxEntityId: 1000,
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Simulate entity creation/destruction churn
+    for (let cycle = 0; cycle < 5; cycle++) {
+      // Create entities
+      for (let i = 0; i < 8; i++) {
+        partition.partitions.value[cycle * 100 + i] = i;
+      }
+      // Destroy entities
+      for (let i = 0; i < 8; i++) {
+        delete partition.partitions.value[cycle * 100 + i];
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Map-based entity churn",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    const spec: PartitionSpec<Schema> = {
+      name: "churnMapBased",
+      schema: { value: Int32Array },
+      maxOwners: 8,
+      // No maxEntityId
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Same churn pattern
+    for (let cycle = 0; cycle < 5; cycle++) {
+      for (let i = 0; i < 8; i++) {
+        partition.partitions.value[cycle * 100 + i] = i;
+      }
+      for (let i = 0; i < 8; i++) {
+        delete partition.partitions.value[cycle * 100 + i];
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Zero-allocation read-heavy workload",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    const spec: PartitionSpec<Schema> & { maxEntityId: number } = {
+      name: "readHeavyZeroAlloc",
+      schema: { value: Float32Array },
+      maxOwners: 16,
+      maxEntityId: 2000,
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Setup
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 100] = i;
+    }
+
+    // Heavy reads (common in render systems)
+    let sum = 0;
+    for (let frame = 0; frame < 100; frame++) {
+      for (let i = 0; i < 16; i++) {
+        sum += partition.partitions.value[i * 100] ?? 0;
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Map-based read-heavy workload",
+  fn: () => {
+    const buffer = new PartitionedBuffer(1024, 64);
+    type Schema = { value: number };
+    const spec: PartitionSpec<Schema> = {
+      name: "readHeavyMapBased",
+      schema: { value: Float32Array },
+      maxOwners: 16,
+    };
+    const partition = buffer.addPartition(new Partition(spec));
+    if (!partition) return;
+
+    // Setup
+    for (let i = 0; i < 16; i++) {
+      partition.partitions.value[i * 100] = i;
+    }
+
+    // Heavy reads
+    let sum = 0;
+    for (let frame = 0; frame < 100; frame++) {
+      for (let i = 0; i < 16; i++) {
+        sum += partition.partitions.value[i * 100] ?? 0;
+      }
+    }
+  },
+});
+
+Deno.bench({
+  name: "SparseFacade - Zero-allocation multi-component ECS pattern",
+  fn: () => {
+    const buffer = new PartitionedBuffer(4096, 256);
+    const maxEntityId = 10000;
+
+    // Typical ECS components with zero-allocation
+    type PosSchema = { x: number; y: number; z: number };
+    const posSpec: PartitionSpec<PosSchema> & { maxEntityId: number } = {
+      name: "position",
+      schema: { x: Float32Array, y: Float32Array, z: Float32Array },
+      maxOwners: 64,
+      maxEntityId,
+    };
+
+    type VelSchema = { x: number; y: number; z: number };
+    const velSpec: PartitionSpec<VelSchema> & { maxEntityId: number } = {
+      name: "velocity",
+      schema: { x: Float32Array, y: Float32Array, z: Float32Array },
+      maxOwners: 64,
+      maxEntityId,
+    };
+
+    const pos = buffer.addPartition(new Partition(posSpec));
+    const vel = buffer.addPartition(new Partition(velSpec));
+    if (!pos || !vel) return;
+
+    // Physics update simulation
+    for (let frame = 0; frame < 10; frame++) {
+      for (let entity = 0; entity < 64; entity++) {
+        const id = entity * 100;
+        pos.partitions.x[id]! += vel.partitions.x?.[id] ?? 0;
+        pos.partitions.y[id]! += vel.partitions.y?.[id] ?? 0;
+        pos.partitions.z[id]! += vel.partitions.z?.[id] ?? 0;
+      }
+    }
+  },
+});
+
 Deno.bench({
   name: "PartitionedBuffer - Memory pressure scenario",
   fn: () => {

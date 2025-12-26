@@ -120,9 +120,9 @@ Deno.test("Utils - isObject", () => {
   assertEquals(isObject({}), true);
   assertEquals(isObject({ key: "value" }), true);
   assertEquals(isObject(new Date()), true);
-  assertEquals(isObject(null), true);
 
   // Invalid objects
+  assertEquals(isObject(null), false); // null is not an object for our purposes
   assertEquals(isObject([]), false);
   assertEquals(isObject(undefined), false);
   assertEquals(isObject("string"), false);

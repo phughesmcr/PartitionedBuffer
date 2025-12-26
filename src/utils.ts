@@ -89,7 +89,7 @@ export const isValidName = (str: string): boolean => {
  * @returns `true` if the object is a valid Record
  */
 export const isObject = <T extends Record<string, unknown>>(object: unknown): object is T => {
-  return (typeof object === "object" && !Array.isArray(object));
+  return (object !== null && typeof object === "object" && !Array.isArray(object));
 };
 
 /**
@@ -100,7 +100,7 @@ export const isObject = <T extends Record<string, unknown>>(object: unknown): ob
  * @param inclusive (defaults to true) test if the number is greater/less than **or equal to** the min/max
  * @returns true if the value is between the min and max values
  */
-export const isNumberBetween = <T = number>(value: T, min: T, max: T, inclusive = true): boolean => {
+export const isNumberBetween = (value: number, min: number, max: number, inclusive = true): boolean => {
   if (inclusive) return value >= min && value <= max;
   return value > min && value < max;
 };

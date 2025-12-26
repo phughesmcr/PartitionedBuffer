@@ -19,6 +19,31 @@ export type PartitionMeta<T extends SchemaSpec<T> | null> = {
    */
   maxOwners?: number | null;
 
+  /**
+   * Maximum entity ID for zero-allocation sparse storage (inclusive).
+   *
+   * When specified with `maxOwners`, enables zero-allocation mode using
+   * pre-allocated Int32Arrays instead of a Map for the sparse mapping.
+   *
+   * Entity IDs must be in range [0, maxEntityId] when this is set.
+   * If not specified, the Map-based implementation is used which supports
+   * arbitrary entity IDs but allocates on first insertion of each new entity.
+   *
+   * __Recommended__: Set this to your world's maximum entity count for
+   * optimal performance in ECS applications.
+   *
+   * @example ```
+   * // Zero-allocation mode: entity IDs 0-9999
+   * const spec: PartitionSpec<Vec2> = {
+   *   name: "position",
+   *   schema: { x: Float32Array, y: Float32Array },
+   *   maxOwners: 100,    // Only 100 entities can have this component
+   *   maxEntityId: 9999, // Entity IDs are bounded by world size
+   * };
+   * ```
+   */
+  maxEntityId?: number | null;
+
   /** The component's label */
   name: string;
 };
@@ -69,11 +94,12 @@ export type PartitionStorage<T extends SchemaSpec<T> | null> = T extends SchemaS
  * @returns `true` if the specification is valid
  */
 export function isValidPartitionSpec<T extends SchemaSpec<T> | null>(spec: unknown): spec is PartitionSpec<T> {
-  const { name, schema = null, maxOwners = null } = spec as PartitionSpec<T>;
+  const { name, schema = null, maxOwners = null, maxEntityId = null } = spec as PartitionSpec<T> & {
+    maxEntityId?: number | null;
+  };
   if (!isValidName(name)) return false;
-  if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners <= 0)) {
-    throw new Error("maxOwners must be a positive integer or null");
-  }
+  if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners <= 0)) return false;
+  if (maxEntityId !== null && (!Number.isSafeInteger(maxEntityId) || maxEntityId < 0)) return false;
   if (schema && !isSchema(schema)) return false;
   return true;
 }
@@ -86,6 +112,8 @@ export class Partition<T extends SchemaSpec<T> | null = null> {
   readonly schema: T extends SchemaSpec<infer U> ? Schema<U> : null;
   /** The maximum number of entities able to equip this component per instance. */
   readonly maxOwners: number | null;
+  /** Maximum entity ID for zero-allocation sparse storage (inclusive). */
+  readonly maxEntityId: number | null;
   /** The storage requirements of the schema in bytes for a single entity */
   readonly size: number;
   /** `true` if the partition is a tag */
@@ -100,10 +128,13 @@ export class Partition<T extends SchemaSpec<T> | null = null> {
     if (!isValidPartitionSpec(spec)) {
       throw new SyntaxError("Invalid partition specification.");
     }
-    const { name, schema = null, maxOwners = null } = spec;
+    const { name, schema = null, maxOwners = null, maxEntityId = null } = spec as PartitionSpec<T> & {
+      maxEntityId?: number | null;
+    };
     this.name = name;
     this.schema = schema as T extends SchemaSpec<infer U> ? Schema<U> : null;
     this.maxOwners = maxOwners ?? null;
+    this.maxEntityId = maxEntityId ?? null;
     this.size = schema ? getEntitySize(schema) : 0;
     this.isTag = (schema === null) as T extends null ? true : false;
   }
