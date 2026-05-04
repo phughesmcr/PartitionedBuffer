@@ -15,6 +15,10 @@ export type PartitionMeta<T extends SchemaSpec<T> | null> = {
   /**
    * The maximum number of entities able to equip this component per world.
    *
+   * When set on a partition with a schema, storage is sparse: bracket access
+   * uses entity IDs, while only `maxOwners` dense slots are allocated per
+   * schema property.
+   *
    * __Warning__: use this only where memory use is a concern, performance will be worse.
    */
   maxOwners?: number | null;
@@ -77,8 +81,13 @@ export type PartitionSchema<T extends SchemaSpec<T> | null> = T extends SchemaSp
  * ```
  *
  * @example ```
- * // A tag with a maximum number of owners:
- * const partition: PartitionSpec<null> = { name: "isSpecial", maxOwners: 100 };
+ * // A sparse schema with a maximum number of owners:
+ * type Vec2 = { x: number, y: number };
+ * const partition: PartitionSpec<Vec2> = {
+ *   name: "sparsePosition",
+ *   schema: { x: Float32Array, y: Float32Array },
+ *   maxOwners: 100,
+ * };
  * ```
  */
 export type PartitionSpec<T extends SchemaSpec<T> | null = null> = PartitionSchema<T> & PartitionMeta<T>;

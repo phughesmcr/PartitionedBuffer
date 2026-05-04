@@ -101,8 +101,45 @@ Deno.test("SparseFacade - Error conditions", () => {
   assertThrows(
     () => sparseFacade(new Int32Array(0)),
     Error,
-    "Cannot create SparseFacade with zero-length array",
+    "Cannot create SparseIndex with zero-length array",
   );
+});
+
+Deno.test("SparseFacade - TypedArray methods bind to dense storage", () => {
+  const dense = new Int32Array(4);
+  const sparse = sparseFacade(dense);
+
+  sparse[10] = 42;
+  sparse[20] = 84;
+
+  assertEquals(Array.from(sparse.slice(0, 2)), [42, 84]);
+
+  sparse.fill(7);
+
+  assertEquals(Array.from(dense), [7, 7, 7, 7]);
+  assertEquals(sparse[10], 7);
+  assertEquals(sparse[20], 7);
+});
+
+Deno.test("SparseFacade - Explicit sparse helpers mirror bracket access", () => {
+  const dense = new Int32Array(4);
+  const sparse = sparseFacade(dense);
+
+  sparse.setEntity(10, 42);
+
+  assertEquals(sparse.dense, dense);
+  assertEquals(sparse.getEntity(10), 42);
+  assertEquals(sparse[10], 42);
+
+  assertEquals(sparse.deleteEntity(10), true);
+  assertEquals(sparse.getEntity(10), undefined);
+  assertEquals(Array.from(dense), [0, 0, 0, 0]);
+
+  sparse.setEntity(20, 84);
+  sparse.clearSparse();
+
+  assertEquals(sparse.getEntity(20), undefined);
+  assertEquals(Array.from(dense), [0, 0, 0, 0]);
 });
 
 Deno.test("SparseFacade - Zero-allocation mode with maxEntityId", () => {

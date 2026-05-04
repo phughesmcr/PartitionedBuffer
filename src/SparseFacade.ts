@@ -8,8 +8,25 @@
 import { BitPool } from "@phughesmcr/bitpool";
 import type { TypedArray } from "./utils.ts";
 
-/** A SparseFacade is a wrapper around a dense TypedArray that allows for sparse storage of values. */
-export type SparseFacade<T extends TypedArray> = T;
+/** Sparse entity-id access layered over dense typed-array storage. */
+export type SparseEntityStorage<T extends TypedArray> = {
+  /** The dense backing array used for cache-friendly storage. */
+  readonly dense: T;
+  /** Read a value by sparse entity ID. */
+  getEntity(entity: number): number | undefined;
+  /** Set a value by sparse entity ID. */
+  setEntity(entity: number, value: number): void;
+  /** Remove an entity from the sparse mapping. */
+  deleteEntity(entity: number): boolean;
+  /** Clear all sparse mappings and zero the dense backing storage. */
+  clearSparse(): void;
+};
+
+/**
+ * A SparseFacade preserves typed-array operations on dense storage while adding
+ * sparse entity-id bracket access.
+ */
+export type SparseFacade<T extends TypedArray> = T & SparseEntityStorage<T>;
 
 /** Sentinel value indicating an entity is not present in the sparse mapping */
 const NOT_PRESENT = -1;
@@ -59,6 +76,12 @@ export class SparseIndex {
     this.#denseArrays.add(dense);
   }
 
+  #clearDenseSlot(index: number): void {
+    for (const dense of this.#denseArrays) {
+      dense[index] = 0;
+    }
+  }
+
   get(entity: number): number | undefined {
     if (!Number.isSafeInteger(entity) || entity < 0) return undefined;
     if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) return undefined;
@@ -88,7 +111,7 @@ export class SparseIndex {
       if (idx === NOT_PRESENT) {
         idx = this.#available.acquire();
         if (idx === NOT_PRESENT) {
-          throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.length})`);
+          throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
         }
         this.#sparseArray[entity] = idx;
         if (this.#denseToEntity) {
@@ -102,7 +125,7 @@ export class SparseIndex {
     if (existing !== undefined) return existing;
     const idx = this.#available.acquire();
     if (idx === NOT_PRESENT) {
-      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.length})`);
+      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
     }
     this.#sparseMap?.set(entity, idx);
     return idx;
@@ -119,6 +142,7 @@ export class SparseIndex {
       if (this.#denseToEntity) {
         this.#denseToEntity[idx] = NOT_PRESENT;
       }
+      this.#clearDenseSlot(idx);
       this.#available.release(idx);
       return true;
     }
@@ -126,6 +150,7 @@ export class SparseIndex {
     const idx = this.#sparseMap?.get(entity);
     if (idx === undefined) return true;
     this.#sparseMap?.delete(entity);
+    this.#clearDenseSlot(idx);
     this.#available.release(idx);
     return true;
   }
@@ -148,6 +173,8 @@ export class SparseIndex {
  *
  * The SparseFacade maintains a mapping between entity IDs and dense array indices, allowing
  * efficient sparse storage while keeping the underlying memory dense for cache performance.
+ * Numeric bracket access uses entity IDs. TypedArray methods such as `slice()` and `fill()`
+ * are bound to the dense backing array and operate on dense slots.
  *
  * **Zero-Allocation Mode**: When `maxEntityId` is provided, the facade uses pre-allocated
  * Int32Arrays for the sparse mapping, achieving zero GC allocations during runtime operations.
@@ -238,13 +265,30 @@ function sparseFacadeWithIndex<T extends TypedArray>(dense: T, index: SparseInde
 
   return new Proxy(dense, {
     get: (target: T, key: string | symbol, _receiver: unknown) => {
+      if (key === "dense") return target;
+      if (key === "getEntity") return get;
+      if (key === "setEntity") {
+        return (entity: number, value: number): void => {
+          set(entity, value);
+        };
+      }
+      if (key === "deleteEntity") return (entity: number): boolean => index.delete(entity);
+      if (key === "clearSparse") {
+        return (): void => {
+          index.clear();
+        };
+      }
       if (typeof key === "string") {
         const num = Number(key);
         if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
           return get(num);
         }
       }
-      return Reflect.get(target, key, target);
+      const value = Reflect.get(target, key, target);
+      if (typeof value === "function") {
+        return value.bind(target);
+      }
+      return value;
     },
     set: (_target: T, key: string | symbol, value: number) => {
       if (typeof key !== "string") {
@@ -268,4 +312,3 @@ function sparseFacadeWithIndex<T extends TypedArray>(dense: T, index: SparseInde
     },
   }) as SparseFacade<T>;
 }
-
