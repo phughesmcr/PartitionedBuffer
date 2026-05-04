@@ -63,6 +63,38 @@ position.partitions.x[0] = 1;
 position.partitions.y[0] = 2;
 ```
 
+### Dense and sparse partitions
+
+By default, partition arrays are dense typed-array views. The index is the slot
+inside the partition, and each schema property has `maxEntitiesPerPartition`
+entries.
+
+Set `maxOwners` when only some entity IDs can own a component and memory use is
+more important than direct dense indexing. In that mode, bracket access uses
+entity IDs while the backing storage remains dense:
+
+```ts
+const sparsePosition = buffer.addPartition({
+  name: "sparsePosition",
+  schema,
+  maxOwners: 100,
+  maxEntityId: 9999,
+});
+
+sparsePosition.set("x", 42, 1);
+sparsePosition.set("y", 42, 2);
+
+delete sparsePosition.partitions.x[42]; // removes entity 42 from every field
+```
+
+When `maxEntityId` is provided with `maxOwners`, sparse mappings are backed by
+pre-allocated arrays for bounded entity IDs. Without it, sparse mappings use a
+Map and support arbitrary non-negative entity IDs.
+
+Calling `buffer.clear()` zeros the stored arrays and removes partition
+registrations from the buffer. Existing partition handles are no longer
+registered with the buffer; retrieve new handles after adding partitions again.
+
 ## Contributing
 
 Contributions are welcome. The aim of the project is performance - both in terms of speed and GC allocation pressure.

@@ -333,7 +333,13 @@ export class PartitionedBuffer extends ArrayBuffer {
     return result;
   }
 
-  /** Clear the buffer and release references */
+  /**
+   * Clear the buffer and release references.
+   *
+   * Existing partition storage handles still reference their typed-array views
+   * over this ArrayBuffer, but they are no longer registered with the buffer.
+   * Add partitions again and retrieve fresh handles after calling clear().
+   */
   clear(): this {
     this.#partitions.forEach(clearAllPartitionArrays);
     this.#partitions.clear();
