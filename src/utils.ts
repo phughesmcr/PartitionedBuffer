@@ -2,12 +2,12 @@
 export const isNumber = (n: unknown): n is number => typeof n === "number";
 
 /** @returns `true` if n is a number, >= 0, <= 2^32 - 1 (4294967295) and is an integer*/
-export const isUint32 = (n: number): n is number => {
+export const isUint32 = (n: number): boolean => {
   return Number.isSafeInteger(n) && n >= 0 && n <= 4294967295;
 };
 
 /** @returns true if `n` is a Uint32 > 0 */
-export const isPositiveUint32 = (n: number): n is number => isUint32(n) && n > 0;
+export const isPositiveUint32 = (n: number): boolean => isUint32(n) && n > 0;
 
 /** All the various kinds of typed arrays */
 export type TypedArray =
@@ -161,8 +161,10 @@ export const isValidTypedArrayValue = (
     case "Uint32Array":
       return Number.isSafeInteger(value) && isNumberBetween(value, 0, 4294967295);
     case "Float32Array":
+      // Float32 max is approximately 3.4028234663852886e+38
+      return isFinite(value) && Math.abs(value) <= 3.4028234e38;
     case "Float64Array":
-      return true;
+      return isFinite(value);
     default:
       return false;
   }

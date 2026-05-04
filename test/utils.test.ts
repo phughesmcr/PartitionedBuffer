@@ -89,11 +89,23 @@ Deno.test("Utils - isValidTypedArrayValue", () => {
   assertEquals(isValidTypedArrayValue(Uint8Array, -1), false);
   assertEquals(isValidTypedArrayValue(Uint8Array, 256), false);
 
-  // Float arrays - should accept any number
-  assertEquals(isValidTypedArrayValue(Float32Array, Number.MAX_VALUE), true);
-  assertEquals(isValidTypedArrayValue(Float32Array, -Number.MAX_VALUE), true);
+  // Float32 - should accept finite numbers within range
   assertEquals(isValidTypedArrayValue(Float32Array, 1.5), true);
+  assertEquals(isValidTypedArrayValue(Float32Array, 3.4028234e38), true); // At max
+  assertEquals(isValidTypedArrayValue(Float32Array, -3.4028234e38), true); // At min
+  assertEquals(isValidTypedArrayValue(Float32Array, Number.MAX_VALUE), false); // Too large
+  assertEquals(isValidTypedArrayValue(Float32Array, -Number.MAX_VALUE), false); // Too small
+  assertEquals(isValidTypedArrayValue(Float32Array, Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float32Array, -Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float32Array, NaN), false);
+
+  // Float64 - should accept any finite number
   assertEquals(isValidTypedArrayValue(Float64Array, Number.MAX_VALUE), true);
+  assertEquals(isValidTypedArrayValue(Float64Array, -Number.MAX_VALUE), true);
+  assertEquals(isValidTypedArrayValue(Float64Array, 1.5), true);
+  assertEquals(isValidTypedArrayValue(Float64Array, Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float64Array, -Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float64Array, NaN), false);
 
   // Invalid inputs
   assertEquals(isValidTypedArrayValue(Int8Array, NaN), false);

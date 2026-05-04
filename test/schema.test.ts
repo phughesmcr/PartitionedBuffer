@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any no-import-prefix
 /// <reference lib="deno.ns" />
 
-import { assertEquals } from "jsr:@std/assert@^1.0.9";
+import { assertEquals, assertThrows } from "jsr:@std/assert@^1.0.9";
 import { getEntitySize, isSchema } from "../src/Schema.ts";
 
 Deno.test("Schema - isSchema function", () => {
@@ -45,11 +45,23 @@ Deno.test("Schema - getEntitySize", () => {
   const initialValueSize = getEntitySize(initialValueSchema);
   assertEquals(initialValueSize, 16);
 
-  // Empty schema
+  // Empty schema - should throw TypeError
   const emptySchema = {};
-  assertEquals(isNaN(getEntitySize(emptySchema)), true);
+  assertThrows(
+    () => getEntitySize(emptySchema),
+    TypeError,
+    "Invalid schema",
+  );
 
-  // Invalid schema
-  assertEquals(isNaN(getEntitySize(null as any)), true);
-  assertEquals(isNaN(getEntitySize(undefined as any)), true);
+  // Invalid schema - should throw TypeError
+  assertThrows(
+    () => getEntitySize(null as any),
+    TypeError,
+    "Invalid schema",
+  );
+  assertThrows(
+    () => getEntitySize(undefined as any),
+    TypeError,
+    "Invalid schema",
+  );
 });

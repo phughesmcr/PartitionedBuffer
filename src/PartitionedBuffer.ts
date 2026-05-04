@@ -7,7 +7,7 @@
 
 import { Partition, type PartitionSpec, type PartitionStorage } from "./Partition.ts";
 import type { Schema, SchemaProperty, SchemaSpec } from "./Schema.ts";
-import { sparseFacade } from "./SparseFacade.ts";
+import { sparseFacade, SparseIndex } from "./SparseFacade.ts";
 import {
   isTypedArrayConstructor,
   isUint32,
@@ -55,6 +55,13 @@ export class PartitionedBuffer extends ArrayBuffer {
   // deno-lint-ignore no-explicit-any
   readonly #partitionsByNames: Map<string, PartitionStorage<any> | null>;
 
+  /** Tag partition metadata by name */
+  readonly #tagMetaByName: Map<string, { byteLength: number; byteOffset: number }>;
+
+  /** Tag partition metadata by partition */
+  // deno-lint-ignore no-explicit-any
+  readonly #tagMetaByPartition: Map<Partition<any>, { byteLength: number; byteOffset: number }>;
+
   /** The current offset into the underlying ArrayBuffer */
   #offset: number;
 
@@ -70,26 +77,32 @@ export class PartitionedBuffer extends ArrayBuffer {
     // Validate size
     if (!isUint32(size)) {
       throw new SyntaxError("size must be a Uint32 number");
-    } else if (size <= 0) {
+    } else if (size === 0) {
       throw new SyntaxError("size must be > 0");
     }
 
-    // Validate maxEntitiesPerPartition
+    // Additional validation only when maxEntitiesPerPartition differs from size
     if (maxEntitiesPerPartition !== size) {
       if (!isUint32(maxEntitiesPerPartition)) {
         throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
-      } else if (maxEntitiesPerPartition < 8) {
-        throw new SyntaxError(
-          "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
-        );
       } else if (size % maxEntitiesPerPartition !== 0) {
         throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition");
       }
     }
 
+    // Validate maxEntitiesPerPartition minimum ALWAYS (alignment requirement)
+    // This check must come after the Uint32 validation to ensure proper error messages
+    if (maxEntitiesPerPartition < 8) {
+      throw new SyntaxError(
+        "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
+      );
+    }
+
     super(size);
     this.#partitions = new Map();
     this.#partitionsByNames = new Map();
+    this.#tagMetaByName = new Map();
+    this.#tagMetaByPartition = new Map();
     this.#offset = 0;
     this.maxEntitiesPerPartition = maxEntitiesPerPartition;
   }
@@ -116,6 +129,7 @@ export class PartitionedBuffer extends ArrayBuffer {
     [name, value]: [keyof T, SchemaProperty],
     maxOwners: number | null = null,
     maxEntityId: number | null = null,
+    sharedIndex?: SparseIndex,
   ): [keyof T, TypedArray] {
     // Validate schema entry
     this.#validateSchemaEntry(String(name), value);
@@ -170,7 +184,7 @@ export class PartitionedBuffer extends ArrayBuffer {
     // Wrap with SparseFacade if maxOwners is specified
     // Use zero-allocation mode if maxEntityId is also specified
     if (maxOwners) {
-      return [name, sparseFacade(typedArray, maxEntityId ?? undefined)];
+      return [name, sparseFacade(typedArray, maxEntityId ?? undefined, sharedIndex)];
     }
     return [name, typedArray];
   }
@@ -255,8 +269,6 @@ export class PartitionedBuffer extends ArrayBuffer {
     const partition = specOrPartition instanceof Partition ? specOrPartition : new Partition(specOrPartition);
     const { name, schema = null, maxOwners = null, maxEntityId = null } = partition;
 
-    if (!schema) return null as PartitionStorage<T>;
-
     // Fast path for existing partitions
     if (this.#partitions.has(partition)) {
       return this.#partitions.get(partition) as PartitionStorage<T>;
@@ -264,6 +276,15 @@ export class PartitionedBuffer extends ArrayBuffer {
 
     // Validate parameters
     this.#validatePartitionParams(partition, name, maxOwners);
+
+    if (!schema) {
+      const tagMeta = { byteLength: 0, byteOffset: this.#offset };
+      this.#partitions.set(partition, null);
+      this.#partitionsByNames.set(name, null);
+      this.#tagMetaByName.set(name, tagMeta);
+      this.#tagMetaByPartition.set(partition, tagMeta);
+      return null as PartitionStorage<T>;
+    }
 
     // Calculate required space (use maxOwners if specified)
     const alignedSize = this.#calculateAlignedSize(schema, maxOwners);
@@ -279,8 +300,9 @@ export class PartitionedBuffer extends ArrayBuffer {
     // Create partitions
     // Note: maxEntityId enables zero-allocation sparse storage when specified with maxOwners
     const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
+    const sharedIndex = maxOwners ? new SparseIndex(maxOwners, { maxEntityId: maxEntityId ?? undefined }) : undefined;
     const partitions = Object.fromEntries(
-      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners, maxEntityId)),
+      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners, maxEntityId, sharedIndex)),
     ) as Record<keyof T, TypedArray>;
 
     // Create and store the partition storage
@@ -296,7 +318,9 @@ export class PartitionedBuffer extends ArrayBuffer {
         if (!partitionStorage) {
           throw new Error(`Partition ${String(partition)} not found`);
         }
-        if (index < 0 || index >= partitionStorage.length) {
+        // Only validate bounds for dense (non-sparse) storage
+        // Sparse storage handles bounds internally via SparseFacade
+        if (!maxOwners && (index < 0 || index >= partitionStorage.length)) {
           throw new RangeError(`Index ${index} out of bounds for partition ${String(partition)}`);
         }
         partitionStorage[index] = value;
@@ -314,6 +338,8 @@ export class PartitionedBuffer extends ArrayBuffer {
     this.#partitions.forEach(clearAllPartitionArrays);
     this.#partitions.clear();
     this.#partitionsByNames.clear();
+    this.#tagMetaByName.clear();
+    this.#tagMetaByPartition.clear();
     this.#offset = 0;
     return this;
   }

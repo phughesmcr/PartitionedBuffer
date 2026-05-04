@@ -119,7 +119,9 @@ export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<any>> | n
  * @returns the size in bytes for one entity
  */
 export function getEntitySize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
-  if (!schema || !isSchema(schema)) return Number.NaN;
+  if (!schema || !isSchema(schema)) {
+    throw new TypeError("Invalid schema provided to getEntitySize");
+  }
 
   let size = 0;
   let maxAlignment = 1;

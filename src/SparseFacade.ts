@@ -14,6 +14,135 @@ export type SparseFacade<T extends TypedArray> = T;
 /** Sentinel value indicating an entity is not present in the sparse mapping */
 const NOT_PRESENT = -1;
 
+type SparseIndexOptions = {
+  maxEntityId?: number;
+};
+
+/**
+ * Shared entity-to-dense index mapping for sparse facades.
+ * Supports zero-allocation mode when maxEntityId is provided.
+ */
+export class SparseIndex {
+  readonly #maxEntityId?: number;
+  readonly #available: BitPool;
+  readonly #denseArrays: Set<TypedArray>;
+  readonly #sparseMap?: Map<number, number>;
+  readonly #sparseArray?: Int32Array;
+  readonly #denseToEntity?: Int32Array;
+
+  constructor(denseLength: number, options: SparseIndexOptions = {}) {
+    if (denseLength === 0) {
+      throw new Error("Cannot create SparseIndex with zero-length array");
+    } else if (denseLength > 2 ** 31 - 1) {
+      throw new Error("Array length exceeds maximum safe BitPool size");
+    }
+
+    const { maxEntityId } = options;
+    if (maxEntityId !== undefined) {
+      if (!Number.isSafeInteger(maxEntityId) || maxEntityId < 0) {
+        throw new Error("maxEntityId must be a non-negative safe integer");
+      }
+      this.#maxEntityId = maxEntityId;
+      this.#sparseArray = new Int32Array(maxEntityId + 1);
+      this.#sparseArray.fill(NOT_PRESENT);
+      this.#denseToEntity = new Int32Array(denseLength);
+      this.#denseToEntity.fill(NOT_PRESENT);
+    } else {
+      this.#sparseMap = new Map<number, number>();
+    }
+
+    this.#available = new BitPool(denseLength);
+    this.#denseArrays = new Set<TypedArray>();
+  }
+
+  registerDenseArray(dense: TypedArray): void {
+    this.#denseArrays.add(dense);
+  }
+
+  get(entity: number): number | undefined {
+    if (!Number.isSafeInteger(entity) || entity < 0) return undefined;
+    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) return undefined;
+
+    if (this.#sparseArray) {
+      const idx = this.#sparseArray[entity] as number;
+      return idx === NOT_PRESENT ? undefined : idx;
+    }
+
+    const idx = this.#sparseMap?.get(entity);
+    return idx === undefined ? undefined : idx;
+  }
+
+  ensure(entity: number): number {
+    if (!Number.isSafeInteger(entity)) {
+      throw new TypeError(`Entity must be a safe integer, got ${entity}`);
+    }
+    if (entity < 0) {
+      throw new RangeError(`Entity index must be non-negative, got ${entity}`);
+    }
+    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) {
+      throw new RangeError(`Entity ${entity} out of bounds [0, ${this.#maxEntityId}]`);
+    }
+
+    if (this.#sparseArray) {
+      let idx = this.#sparseArray[entity] as number;
+      if (idx === NOT_PRESENT) {
+        idx = this.#available.acquire();
+        if (idx === NOT_PRESENT) {
+          throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.length})`);
+        }
+        this.#sparseArray[entity] = idx;
+        if (this.#denseToEntity) {
+          this.#denseToEntity[idx] = entity;
+        }
+      }
+      return idx;
+    }
+
+    const existing = this.#sparseMap?.get(entity);
+    if (existing !== undefined) return existing;
+    const idx = this.#available.acquire();
+    if (idx === NOT_PRESENT) {
+      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.length})`);
+    }
+    this.#sparseMap?.set(entity, idx);
+    return idx;
+  }
+
+  delete(entity: number): boolean {
+    if (!Number.isSafeInteger(entity) || entity < 0) return false;
+    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) return false;
+
+    if (this.#sparseArray) {
+      const idx = this.#sparseArray[entity] as number;
+      if (idx === NOT_PRESENT) return true;
+      this.#sparseArray[entity] = NOT_PRESENT;
+      if (this.#denseToEntity) {
+        this.#denseToEntity[idx] = NOT_PRESENT;
+      }
+      this.#available.release(idx);
+      return true;
+    }
+
+    const idx = this.#sparseMap?.get(entity);
+    if (idx === undefined) return true;
+    this.#sparseMap?.delete(entity);
+    this.#available.release(idx);
+    return true;
+  }
+
+  clear(): void {
+    if (this.#sparseArray) {
+      this.#sparseArray.fill(NOT_PRESENT);
+      this.#denseToEntity?.fill(NOT_PRESENT);
+    }
+    this.#sparseMap?.clear();
+    this.#available.clear();
+    for (const dense of this.#denseArrays) {
+      dense.fill(0);
+    }
+  }
+}
+
 /**
  * A Sparse Facade is a proxy to a dense TypedArray that allows for sparse storage of values.
  *
@@ -56,88 +185,55 @@ const NOT_PRESENT = -1;
  */
 export function sparseFacade<T extends TypedArray>(
   dense: T,
-  maxEntityId?: number,
+  maxEntityId?: number | SparseIndex,
+  sharedIndex?: SparseIndex,
 ): SparseFacade<T> {
-  if (dense.length === 0) {
-    throw new Error("Cannot create SparseFacade with zero-length array");
-  } else if (dense.length > 2 ** 31 - 1) {
-    throw new Error("Array length exceeds maximum safe BitPool size");
+  let resolvedMaxEntityId: number | undefined;
+  let index: SparseIndex | undefined;
+
+  if (maxEntityId instanceof SparseIndex) {
+    index = maxEntityId;
+  } else {
+    resolvedMaxEntityId = maxEntityId;
+    index = sharedIndex;
   }
 
-  // Use zero-allocation mode when maxEntityId is provided
-  if (maxEntityId !== undefined) {
-    if (!Number.isSafeInteger(maxEntityId) || maxEntityId < 0) {
-      throw new Error("maxEntityId must be a non-negative safe integer");
-    }
-    return sparseFacadeZeroAlloc(dense, maxEntityId);
+  if (!index) {
+    index = new SparseIndex(dense.length, { maxEntityId: resolvedMaxEntityId });
   }
 
-  // Fall back to Map-based implementation for arbitrary entity IDs
-  return sparseFacadeMap(dense);
+  index.registerDenseArray(dense);
+  return sparseFacadeWithIndex(dense, index);
 }
 
 /**
  * Zero-allocation SparseFacade implementation using pre-allocated Int32Arrays.
  * @internal
  */
-function sparseFacadeZeroAlloc<T extends TypedArray>(
-  dense: T,
-  maxEntityId: number,
-): SparseFacade<T> {
-  /** Pre-allocated sparse array: entityId -> denseIndex (NOT_PRESENT = not stored) */
-  const sparse = new Int32Array(maxEntityId + 1);
-  sparse.fill(NOT_PRESENT);
-
-  /** Pre-allocated dense-to-entity mapping: denseIndex -> entityId */
-  const denseToEntity = new Int32Array(dense.length);
-  denseToEntity.fill(NOT_PRESENT);
-
-  /** BitPool for tracking available dense indices - uses zero-allocation iteration */
-  const available = new BitPool(dense.length);
-
+function sparseFacadeWithIndex<T extends TypedArray>(dense: T, index: SparseIndex): SparseFacade<T> {
   /** @returns the entity's value from the dense array or undefined if non-existent */
   const get = (entity: number): number | undefined => {
-    if (entity < 0 || entity > maxEntityId) return undefined;
-    const idx = sparse[entity] as number;
-    return idx === NOT_PRESENT ? undefined : dense[idx];
+    const idx = index.get(entity);
+    return idx === undefined ? undefined : dense[idx];
   };
 
-  /** @returns `false` if dense array is full, entity out of bounds, or error; `true` if set successfully */
-  const set = (entity: number, value: number): boolean => {
-    if (entity < 0 || !Number.isSafeInteger(entity) || entity > maxEntityId) return false;
-
-    let idx = sparse[entity] as number; // Safe: entity is already bounds-checked
-    if (idx === NOT_PRESENT) {
-      idx = available.acquire();
-      if (idx === NOT_PRESENT) return false; // Pool exhausted
-      sparse[entity] = idx;
-      denseToEntity[idx] = entity;
-    }
+  /** @throws {TypeError} if entity is not a valid integer */
+  /** @throws {RangeError} if entity is out of bounds or dense array is full */
+  const set = (entity: number, value: number): true => {
+    const idx = index.ensure(entity);
     dense[idx] = value;
     return true;
   };
 
   const dispose = () => {
-    sparse.fill(NOT_PRESENT);
-    denseToEntity.fill(NOT_PRESENT);
-    available.clear();
-    dense.fill(0);
+    index.clear();
     return true;
   };
 
-  /** @returns `false` if the entity isn't stored, `true` if deleted successfully */
+  /** @returns `false` for invalid entity IDs, `true` otherwise */
   const deleteProperty = (entity: number): boolean => {
     if (entity === NOT_PRESENT) return dispose();
-    if (entity < 0 || !Number.isSafeInteger(entity) || entity > maxEntityId) return false;
-
-    const idx = sparse[entity] as number; // Safe: entity is already bounds-checked
-    if (idx === NOT_PRESENT) return false;
-
-    dense[idx] = 0;
-    sparse[entity] = NOT_PRESENT;
-    denseToEntity[idx] = NOT_PRESENT;
-    available.release(idx);
-    return true;
+    return index.delete(entity);
   };
 
   return new Proxy(dense, {
@@ -151,9 +247,16 @@ function sparseFacadeZeroAlloc<T extends TypedArray>(
       return Reflect.get(target, key, target);
     },
     set: (_target: T, key: string | symbol, value: number) => {
-      if (typeof key !== "string") return false;
+      if (typeof key !== "string") {
+        throw new TypeError(`Property key must be a string, got ${typeof key}`);
+      }
       const num = Number(key);
-      if (isNaN(num) || !Number.isInteger(num) || num < 0) return false;
+      if (isNaN(num) || !Number.isInteger(num)) {
+        throw new TypeError(`Property key must be an integer, got "${key}"`);
+      }
+      if (num < 0) {
+        throw new RangeError(`Entity index must be non-negative, got ${num}`);
+      }
       return set(num, value);
     },
     deleteProperty: (_target: T, key: string | symbol) => {
@@ -166,76 +269,3 @@ function sparseFacadeZeroAlloc<T extends TypedArray>(
   }) as SparseFacade<T>;
 }
 
-/**
- * Map-based SparseFacade implementation for arbitrary entity IDs.
- * Note: This allocates on first insertion of each new entity ID.
- * @internal
- */
-function sparseFacadeMap<T extends TypedArray>(dense: T): SparseFacade<T> {
-  /** Map<ID, Dense Array Index> - allocates on new insertions */
-  const sparse = new Map<number, number>();
-
-  /** Array of available indexes in dense */
-  const available = new BitPool(dense.length);
-
-  /** @returns the entity's value from the dense array or undefined if non-existent */
-  const get = (entity: number): number | undefined => {
-    const idx = sparse.get(entity);
-    return idx === undefined ? undefined : dense[idx];
-  };
-
-  /** @returns `false` if dense array is full or error, `true` if value set successfully */
-  const set = (entity: number, value: number): boolean => {
-    if (isNaN(entity) || entity < 0 || !Number.isSafeInteger(entity)) return false;
-    const idx = sparse.get(entity) ?? available.acquire();
-    if (idx === -1) return false;
-    dense[idx] = value;
-    sparse.set(entity, idx);
-    return true;
-  };
-
-  const dispose = () => {
-    sparse.clear();
-    available.clear();
-    dense.fill(0);
-    return true;
-  };
-
-  /** @returns `false` if the entity isn't already stored, `true` if deleted successfully */
-  const deleteProperty = (entity: number): boolean => {
-    if (entity === -1) return dispose();
-    if (isNaN(entity) || entity < 0 || !Number.isSafeInteger(entity)) return false;
-    const idx = sparse.get(entity);
-    if (idx === undefined) return false;
-
-    dense[idx] = 0;
-    sparse.delete(entity);
-    available.release(idx);
-    return true;
-  };
-
-  return new Proxy(dense, {
-    get: (target: T, key: string | symbol, _receiver: unknown) => {
-      if (typeof key === "string") {
-        const num = Number(key);
-        if (!isNaN(num) && Number.isInteger(num) && num >= 0) {
-          return get(num);
-        }
-      }
-      return Reflect.get(target, key, target);
-    },
-    set: (_target: T, key: string | symbol, value: number) => {
-      if (typeof key !== "string") return false;
-      const num = Number(key);
-      if (isNaN(num) || !Number.isInteger(num) || num < 0) return false;
-      return set(num, value);
-    },
-    deleteProperty: (_target: T, key: string | symbol) => {
-      if (key === "-1") return deleteProperty(-1);
-      if (typeof key !== "string") return false;
-      const num = Number(key);
-      if (isNaN(num) || !Number.isInteger(num) || num < 0) return false;
-      return deleteProperty(num);
-    },
-  }) as SparseFacade<T>;
-}

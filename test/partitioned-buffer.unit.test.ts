@@ -53,6 +53,25 @@ Deno.test("PartitionedBuffer - Constructor validation", () => {
   );
 });
 
+Deno.test("PartitionedBuffer - Constructor rejects size below minimum alignment", () => {
+  // When maxEntitiesPerPartition equals size, the < 8 check should still apply
+  assertThrows(
+    () => new PartitionedBuffer(4),
+    SyntaxError,
+    "maxEntitiesPerPartition must be at least 8",
+  );
+  assertThrows(
+    () => new PartitionedBuffer(4, 4),
+    SyntaxError,
+    "maxEntitiesPerPartition must be at least 8",
+  );
+  assertThrows(
+    () => new PartitionedBuffer(7, 7),
+    SyntaxError,
+    "maxEntitiesPerPartition must be at least 8",
+  );
+});
+
 Deno.test("PartitionedBuffer - Constructor with defaults", () => {
   // When only size is provided, maxEntitiesPerPartition should equal size
   const buffer = new PartitionedBuffer(64);
@@ -78,6 +97,8 @@ Deno.test("PartitionedBuffer - Null schema returns null", () => {
   const nullPartition = new Partition(nullSpec);
   const nullInstance = buffer.addPartition(nullPartition);
   assertEquals(nullInstance, null);
+  assertEquals(buffer.hasPartition("null"), true);
+  assertEquals(buffer.getPartition("null"), null);
 });
 
 Deno.test("PartitionedBuffer - Basic partition creation", () => {

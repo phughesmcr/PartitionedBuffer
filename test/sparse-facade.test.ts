@@ -36,35 +36,33 @@ Deno.test("SparseFacade - Proxy behavior edge cases", () => {
   const dense = new Int32Array(4);
   const sparse = sparseFacade(dense);
 
-  // Test with invalid entity IDs
+  // Test with invalid entity IDs (get returns undefined)
   assertEquals(sparse[-2], undefined);
   assertEquals(sparse[1.5] as any, undefined);
   assertEquals(sparse[NaN] as any, undefined);
 
-  // Test setting invalid values
-  try {
-    sparse[-2] = 42;
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Test setting invalid values - should throw TypeError or RangeError
+  assertThrows(
+    () => {
+      sparse[-2] = 42;
+    },
+    RangeError,
+    "non-negative",
+  );
 
-  try {
-    sparse[1.5] = 42;
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  assertThrows(
+    () => {
+      sparse[1.5] = 42;
+    },
+    TypeError,
+    "integer",
+  );
 
   assertEquals(dense[0], 0);
 
-  // Test deletion of non-existent entities
-  try {
-    delete sparse[999];
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Test deletion of non-existent valid entities (idempotent success)
+  const deletedMissing = delete sparse[999];
+  assertEquals(deletedMissing, true);
 
   try {
     delete sparse[-2];
@@ -82,13 +80,14 @@ Deno.test("SparseFacade - BitPool exhaustion", () => {
   sparse[1] = 10;
   sparse[2] = 20;
 
-  // Try to add more
-  try {
-    sparse[3] = 30;
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Try to add more - should throw RangeError for pool exhaustion
+  assertThrows(
+    () => {
+      sparse[3] = 30;
+    },
+    RangeError,
+    "exhausted",
+  );
 
   assertEquals(sparse[3], undefined);
 
@@ -120,13 +119,14 @@ Deno.test("SparseFacade - Zero-allocation mode with maxEntityId", () => {
   assertEquals(sparse[50], 2.5);
   assertEquals(sparse[100], 3.5);
 
-  // Test entity ID outside maxEntityId bounds fails
-  try {
-    sparse[101] = 4.5; // Beyond maxEntityId
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Test entity ID outside maxEntityId bounds fails with RangeError
+  assertThrows(
+    () => {
+      sparse[101] = 4.5;
+    },
+    RangeError,
+    "out of bounds",
+  );
   assertEquals(sparse[101], undefined);
 
   // Test deletion works correctly
@@ -170,13 +170,14 @@ Deno.test("SparseFacade - Zero-allocation mode with maxEntityId = 0", () => {
   sparse[0] = 42;
   assertEquals(sparse[0], 42);
 
-  // Entity 1 should fail (beyond maxEntityId)
-  try {
-    sparse[1] = 100;
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Entity 1 should fail (beyond maxEntityId) with RangeError
+  assertThrows(
+    () => {
+      sparse[1] = 100;
+    },
+    RangeError,
+    "out of bounds",
+  );
   assertEquals(sparse[1], undefined);
 
   // Cleanup works
@@ -193,13 +194,14 @@ Deno.test("SparseFacade - Zero-allocation pool exhaustion", () => {
   sparse[100] = 1;
   sparse[500] = 2;
 
-  // Third entity should fail (pool exhausted, not maxEntityId limit)
-  try {
-    sparse[750] = 3;
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  // Third entity should fail (pool exhausted, not maxEntityId limit) with RangeError
+  assertThrows(
+    () => {
+      sparse[750] = 3;
+    },
+    RangeError,
+    "exhausted",
+  );
 
   // Delete one to free slot
   const deleted = delete sparse[100];
@@ -291,11 +293,12 @@ Deno.test("SparseFacade - Compare Map vs Zero-allocation behavior", () => {
   sparseMap[50000] = 999;
   assertEquals(sparseMap[50000], 999);
 
-  // Zero-allocation rejects entity IDs beyond maxEntityId
-  try {
-    sparseZero[50000] = 999; // Beyond maxEntityId of 1000
-    assertEquals(false, true, "Should have thrown");
-  } catch {
-    // Expected
-  }
+  // Zero-allocation rejects entity IDs beyond maxEntityId with RangeError
+  assertThrows(
+    () => {
+      sparseZero[50000] = 999;
+    },
+    RangeError,
+    "out of bounds",
+  );
 });
