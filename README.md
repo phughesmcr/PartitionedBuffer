@@ -95,6 +95,16 @@ Calling `buffer.clear()` zeros the stored arrays and removes partition
 registrations from the buffer. Existing partition handles are no longer
 registered with the buffer; retrieve new handles after adding partitions again.
 
+### Sizing helpers
+
+- `getEntitySize(schema)` — per-entity **stride** (sum of each property's
+  `BYTES_PER_ELEMENT`). Use for logical component width; there is no inter-field
+  padding between SoA columns.
+- `getPartitionByteSize(schema, rowCount)` — total bytes one partition consumes
+  in a `PartitionedBuffer` (SoA columns plus inter-column alignment). Use when
+  budgeting buffer size: `rowCount` is `maxEntitiesPerPartition` for dense
+  partitions or `maxOwners` for sparse partitions.
+
 ## Contributing
 
 Contributions are welcome. The aim of the project is performance - both in terms of speed and GC allocation pressure.

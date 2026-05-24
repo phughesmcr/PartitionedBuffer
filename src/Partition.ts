@@ -123,7 +123,10 @@ export class Partition<T extends SchemaSpec<T> | null = null> {
   readonly maxOwners: number | null;
   /** Maximum entity ID for zero-allocation sparse storage (inclusive). */
   readonly maxEntityId: number | null;
-  /** The storage requirements of the schema in bytes for a single entity */
+  /**
+   * Per-entity stride in bytes (sum of schema column element sizes; SoA, no inter-field padding).
+   * For total partition bytes in the buffer, use `getPartitionByteSize(schema, rowCount)`.
+   */
   readonly size: number;
   /** `true` if the partition is a tag */
   readonly isTag: T extends null ? true : false;

@@ -7,12 +7,12 @@
 
 import { Partition, type PartitionSpec, type PartitionStorage } from "./src/Partition.ts";
 import { PartitionedBuffer } from "./src/PartitionedBuffer.ts";
-import { getEntitySize, isSchema, type Schema } from "./src/Schema.ts";
+import { getEntitySize, getPartitionByteSize, isSchema, type Schema } from "./src/Schema.ts";
 import { isValidName, type TypedArray, type TypedArrayConstructor } from "./src/utils.ts";
 
 /**
  * Partition is a convenient way to define an object in a PartitionedBuffer.
  * PartitionedBuffer is a convenient way to manage a data in ArrayBuffers.
  */
-export { getEntitySize, isSchema, isValidName, Partition, PartitionedBuffer };
+export { getEntitySize, getPartitionByteSize, isSchema, isValidName, Partition, PartitionedBuffer };
 export type { PartitionSpec, PartitionStorage, Schema, TypedArray, TypedArrayConstructor };
