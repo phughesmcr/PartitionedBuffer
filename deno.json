@@ -79,9 +79,13 @@
       "description": "Format, lint, and check the codebase",
       "command": "deno fmt && deno lint && deno check mod.ts src/**/*.ts"
     },
+    "check:docs": {
+      "description": "Check the documentation",
+      "command": "deno doc --lint mod.ts"
+    },
     "ci": {
       "description": "Run prep and tests",
-      "command": "CI=1 deno task prep && deno test"
+      "command": "CI=1 deno task prep && deno test && deno task check:docs"
     }
   },
   "test": {
