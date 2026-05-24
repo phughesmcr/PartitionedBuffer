@@ -59,8 +59,8 @@ export type PartitionMeta<T extends SchemaSpec<T> | null> = {
  */
 export type PartitionSchema<T extends SchemaSpec<T> | null> = T extends SchemaSpec<infer U> ? {
     schema: Schema<U>;
-  }
-  : {
+  } :
+  {
     schema?: null;
   };
 

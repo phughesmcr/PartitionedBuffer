@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-console
 import { PartitionedBuffer, type Schema } from "../mod.ts";
 
 // Define our particle properties
@@ -192,7 +193,7 @@ class ParticleSystem {
 }
 
 // Example usage demonstrating particle system simulation
-function runParticleDemo() {
+function runParticleDemo(): void {
   console.log("Starting particle system simulation...\n");
 
   const particles = new ParticleSystem(4_000);
@@ -224,7 +225,7 @@ function runParticleDemo() {
   let lastTime = Date.now() / 1000;
   const startTime = lastTime;
 
-  function animate() {
+  function animate(): void {
     if (!isRunning) return;
 
     const currentTime = Date.now() / 1000;

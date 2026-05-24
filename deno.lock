@@ -1,0 +1,46 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@phughesmcr/bitpool@0.7.0": "0.7.0",
+    "jsr:@phughesmcr/bitpool@0.8": "0.8.0",
+    "jsr:@phughesmcr/bitpool@0.8.0": "0.8.0",
+    "jsr:@phughesmcr/booleanarray@0.11": "0.11.0",
+    "jsr:@phughesmcr/booleanarray@0.12": "0.12.0",
+    "jsr:@std/assert@^1.0.9": "1.0.12",
+    "jsr:@std/internal@^1.0.6": "1.0.6"
+  },
+  "jsr": {
+    "@phughesmcr/bitpool@0.7.0": {
+      "integrity": "e4a66b379686d6d2b03dbc9d7808773e21646c9b0a990d415eab0915320de188",
+      "dependencies": [
+        "jsr:@phughesmcr/booleanarray@0.11"
+      ]
+    },
+    "@phughesmcr/bitpool@0.8.0": {
+      "integrity": "b6ff60d15a6548d613786f3e895257d7e2a9216f5540bc3417814a6a913847f7",
+      "dependencies": [
+        "jsr:@phughesmcr/booleanarray@0.12"
+      ]
+    },
+    "@phughesmcr/booleanarray@0.11.0": {
+      "integrity": "eb7a1c081c899611e67ad18f62f40193f2e1668cff0c818a8008d3771af67c8c"
+    },
+    "@phughesmcr/booleanarray@0.12.0": {
+      "integrity": "76ff174fce3927354d9671b7ad11990351730d0db1204a4239cbdde27f00487a"
+    },
+    "@std/assert@1.0.12": {
+      "integrity": "08009f0926dda9cbd8bef3a35d3b6a4b964b0ab5c3e140a4e0351fbf34af5b9a",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.6": {
+      "integrity": "9533b128f230f73bd209408bb07a4b12f8d4255ab2a4d22a1fd6d87304aca9a4"
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@phughesmcr/bitpool@0.8"
+    ]
+  }
+}

@@ -15,5 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run CI checks
+        run: deno task ci
+
+      - name: Lint generated documentation
+        run: deno doc --lint mod.ts
+
+      - name: Verify JSR package
+        run: deno publish --dry-run
+
       - name: Publish package
-        run: npx jsr publish
+        run: deno publish

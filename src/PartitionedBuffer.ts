@@ -127,9 +127,9 @@ export class PartitionedBuffer extends ArrayBuffer {
 
   #createPartition<T extends SchemaSpec<T> | null>(
     [name, value]: [keyof T, SchemaProperty],
+    sharedIndex?: SparseIndex,
     maxOwners: number | null = null,
     maxEntityId: number | null = null,
-    sharedIndex?: SparseIndex,
   ): [keyof T, TypedArray] {
     // Validate schema entry
     this.#validateSchemaEntry(String(name), value);
@@ -302,7 +302,7 @@ export class PartitionedBuffer extends ArrayBuffer {
     const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
     const sharedIndex = maxOwners ? new SparseIndex(maxOwners, { maxEntityId: maxEntityId ?? undefined }) : undefined;
     const partitions = Object.fromEntries(
-      schemaEntries.map((entry) => this.#createPartition(entry, maxOwners, maxEntityId, sharedIndex)),
+      schemaEntries.map((entry) => this.#createPartition(entry, sharedIndex, maxOwners, maxEntityId)),
     ) as Record<keyof T, TypedArray>;
 
     // Create and store the partition storage

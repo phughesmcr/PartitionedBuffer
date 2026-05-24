@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-console no-await-in-loop
 import { PartitionedBuffer, type Schema } from "../mod.ts";
 
 type Position = { x: number; y: number };
@@ -225,11 +226,11 @@ class FireworksDemo {
       // Fade glyph for sparks based on life ratio
       if (kind === 1) {
         const ratio = life.partitions.current[i]! / life.partitions.total[i]!;
-        meta.partitions.glyph[i] = (ratio < 0.33)
-          ? ".".codePointAt(0)!
-          : (ratio < 0.66)
-          ? "+".codePointAt(0)!
-          : "*".codePointAt(0)!;
+        meta.partitions.glyph[i] = (ratio < 0.33) ?
+          ".".codePointAt(0)! :
+          (ratio < 0.66) ?
+          "+".codePointAt(0)! :
+          "*".codePointAt(0)!;
       } else {
         meta.partitions.glyph[i] = "^".codePointAt(0)!;
       }
