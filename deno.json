@@ -68,7 +68,7 @@
     }
   },
   "imports": {
-    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.8.0"
+    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.9.1"
   },
   "tasks": {
     "example": {
