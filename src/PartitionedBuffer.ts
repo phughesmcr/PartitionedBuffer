@@ -40,10 +40,10 @@ function clearAllPartitionArrays<T extends SchemaSpec<T>>(
 /** A PartitionedBuffer is an ArrayBuffer with named storage partitions. */
 export class PartitionedBuffer extends ArrayBuffer {
   /** Minimum alignment in bytes for TypedArrays */
-  static readonly MIN_ALIGNMENT = MIN_ALIGNMENT;
+  static readonly MIN_ALIGNMENT: typeof MIN_ALIGNMENT = MIN_ALIGNMENT;
 
   /** Maximum safe partition size to prevent allocation errors */
-  static readonly MAX_PARTITION_SIZE = MAX_PARTITION_SIZE;
+  static readonly MAX_PARTITION_SIZE: typeof MAX_PARTITION_SIZE = MAX_PARTITION_SIZE;
 
   /** The maximum possible number of owners per partition */
   readonly maxEntitiesPerPartition: number;
@@ -184,6 +184,13 @@ export class PartitionedBuffer extends ArrayBuffer {
     }
   }
 
+  /**
+   * Add a partition to the buffer.
+   * @param specOrPartition the partition specification or instance to add
+   * @returns the partition storage, or null if no schema was provided
+   * @throws {Error} if the partition name exists or there is not enough space
+   * @throws {TypeError} if the schema contains invalid properties
+   */
   addPartition<T extends SchemaSpec<T> | null = null>(
     specOrPartition: PartitionSpec<T> | Partition<T>,
   ): PartitionStorage<T> {
@@ -230,6 +237,13 @@ export class PartitionedBuffer extends ArrayBuffer {
     return result as PartitionStorage<T>;
   }
 
+  /**
+   * Clear the buffer and release references.
+   *
+   * Existing partition storage handles still reference their typed-array views
+   * over this ArrayBuffer, but they are no longer registered with the buffer.
+   * Add partitions again and retrieve fresh handles after calling clear().
+   */
   clear(): this {
     for (const storage of this.#storageByName.values()) {
       clearAllPartitionArrays(storage);
@@ -240,10 +254,17 @@ export class PartitionedBuffer extends ArrayBuffer {
     return this;
   }
 
+  /** The amount of free space in bytes in the underlying ArrayBuffer */
   getFreeSpace(): number {
     return this.byteLength - this.#offset;
   }
 
+  /**
+   * Get a partition by name or spec.
+   * @param key the partition name or spec to retrieve
+   * @returns the partition storage if found, undefined otherwise
+   * @throws {TypeError} if key is null or undefined
+   */
   getPartition<T extends SchemaSpec<T> | null = null>(
     key: PartitionSpec<T> | Partition<T> | string,
   ): PartitionStorage<T> | undefined {
@@ -258,10 +279,16 @@ export class PartitionedBuffer extends ArrayBuffer {
     return this.#storageByName.get(name!) as PartitionStorage<T> | undefined;
   }
 
+  /** Get the current offset into the underlying ArrayBuffer */
   getOffset(): number {
     return this.#offset;
   }
 
+  /**
+   * Check if a partition exists.
+   * @param key the partition name or spec to check
+   * @returns true if the partition exists, false otherwise
+   */
   hasPartition<T extends SchemaSpec<T> | null = null>(
     key: PartitionSpec<T> | Partition<T> | string,
   ): boolean {

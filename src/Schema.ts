@@ -97,22 +97,21 @@ const isValidSchemaEntry = (prop: [string, SchemaProperty]): boolean => {
 };
 
 /**
- * @public
- * Schema type guard
+ * Schema type guard.
  * @param schema the object to test
  */
-// deno-lint-ignore no-explicit-any
-export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<any>> | null => {
-  if (schema === null) return true; // Explicitly handle null schemas
-  try {
-    if (!isObject(schema)) return false;
-    const entries = Object.entries(schema) as [string, SchemaProperty][];
-    if (!entries.length) return false;
-    return entries.every(isValidSchemaEntry);
-  } catch (_) {
-    return false;
-  }
-};
+export const isSchema = // deno-lint-ignore no-explicit-any
+  (schema: unknown): schema is Schema<SchemaSpec<any>> | null => {
+    if (schema === null) return true; // Explicitly handle null schemas
+    try {
+      if (!isObject(schema)) return false;
+      const entries = Object.entries(schema) as [string, SchemaProperty][];
+      if (!entries.length) return false;
+      return entries.every(isValidSchemaEntry);
+    } catch (_) {
+      return false;
+    }
+  };
 
 /**
  * Per-entity stride in bytes (sum of column element sizes; SoA, no inter-field padding).
