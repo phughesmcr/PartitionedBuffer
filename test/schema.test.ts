@@ -19,13 +19,26 @@ Deno.test("Schema - isSchema function", () => {
   assertEquals(isSchema([]), false);
   assertEquals(isSchema({ invalidProp: {} }), false);
   assertEquals(isSchema({ "123invalid": Float32Array }), false);
+  assertEquals(isSchema({ value: [Uint8Array, -1] }), false);
+  assertEquals(isSchema({ value: [Float32Array, Infinity] }), false);
+  assertEquals(isSchema({ toString: Float32Array }), false);
+  assertEquals(
+    isSchema(
+      new Proxy({}, {
+        ownKeys: () => {
+          throw new Error("broken proxy");
+        },
+      }),
+    ),
+    false,
+  );
 });
 
 Deno.test("Schema - getEntitySize", () => {
   // Simple schema
   const simpleSchema = { x: Float32Array, y: Float32Array };
   const simpleSize = getEntitySize(simpleSchema);
-  assertEquals(simpleSize, 16);
+  assertEquals(simpleSize, 8);
 
   // Mixed types schema
   const mixedSchema = {
@@ -34,8 +47,7 @@ Deno.test("Schema - getEntitySize", () => {
     int32: Int32Array,
   };
   const mixedSize = getEntitySize(mixedSchema);
-  assertEquals(mixedSize > 0, true);
-  assertEquals(mixedSize % 8, 0);
+  assertEquals(mixedSize, 13);
 
   // Schema with initial values
   const initialValueSchema = {
@@ -43,7 +55,7 @@ Deno.test("Schema - getEntitySize", () => {
     y: [Int32Array, 42] as [Int32ArrayConstructor, number],
   };
   const initialValueSize = getEntitySize(initialValueSchema);
-  assertEquals(initialValueSize, 16);
+  assertEquals(initialValueSize, 8);
 
   // Empty schema - should throw TypeError
   const emptySchema = {};

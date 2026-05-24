@@ -13,6 +13,11 @@ Deno.test("PartitionedBuffer - Constructor validation", () => {
 
   // Invalid size
   assertThrows(
+    () => new PartitionedBuffer(0, 8),
+    SyntaxError,
+    "size must be > 0",
+  );
+  assertThrows(
     () => new PartitionedBuffer(-1, 8),
     SyntaxError,
     "size must be a Uint32 number",
@@ -99,6 +104,22 @@ Deno.test("PartitionedBuffer - Null schema returns null", () => {
   assertEquals(nullInstance, null);
   assertEquals(buffer.hasPartition("null"), true);
   assertEquals(buffer.getPartition("null"), null);
+});
+
+Deno.test("PartitionedBuffer - tag partitions are idempotent by instance and reject duplicate names", () => {
+  const buffer = new PartitionedBuffer(1024, 8);
+  const tag = new Partition({ name: "alive" });
+
+  assertEquals(buffer.addPartition(tag), null);
+  assertEquals(buffer.addPartition(tag), null);
+  assertEquals(buffer.getOffset(), 0);
+  assertEquals(buffer.hasPartition(tag), true);
+
+  assertThrows(
+    () => buffer.addPartition({ name: "alive" }),
+    Error,
+    "already exists",
+  );
 });
 
 Deno.test("PartitionedBuffer - Basic partition creation", () => {
@@ -195,6 +216,12 @@ Deno.test("PartitionedBuffer - PartitionStorage API", () => {
 
   // Test get for undefined index
   assertEquals(partition.get("x", 99), undefined);
+  assertEquals(partition.get("missing" as any, 0), undefined);
+  assertThrows(
+    () => partition.set("missing" as any, 0, 100),
+    Error,
+    "not found",
+  );
 
   // Test set with out-of-bounds index
   assertThrows(
@@ -227,6 +254,23 @@ Deno.test("PartitionedBuffer - Byte accounting", () => {
   assertEquals(offsetAfter - offsetBefore, expectedSize);
   assertEquals(partition?.byteLength, expectedSize);
   assertEquals(partition?.byteOffset, offsetBefore);
+});
+
+Deno.test("PartitionedBuffer - Sparse partition byte accounting uses maxOwners", () => {
+  const buffer = new PartitionedBuffer(1024, 16);
+  type SparseSchema = { value: number };
+  const sparse = buffer.addPartition<SparseSchema>({
+    name: "sparse",
+    schema: { value: Float64Array },
+    maxOwners: 2,
+    maxEntityId: 100,
+  });
+
+  assertEquals(sparse.partitions.value.length, 2);
+  assertEquals(sparse.byteLength, 16);
+  assertEquals(sparse.byteOffset, 0);
+  assertEquals(buffer.getOffset(), 16);
+  assertEquals(buffer.getFreeSpace(), 1008);
 });
 
 Deno.test("PartitionedBuffer - Memory alignment", () => {
@@ -279,9 +323,14 @@ Deno.test("PartitionedBuffer - Clear resets buffer", () => {
   if (partition) {
     partition.partitions.value[0] = 42;
   }
+  const partitionHandle = new Partition<TestSchema>({ name: "handle", schema: { value: Int32Array } });
+  const handleStorage = buffer.addPartition(partitionHandle);
+  handleStorage.partitions.value[0] = 7;
+  buffer.addPartition({ name: "tag_only" });
 
   assertEquals(buffer.getOffset() > 0, true);
   assertEquals(buffer.hasPartition("test"), true);
+  assertEquals(buffer.hasPartition(partitionHandle), true);
 
   // Clear the buffer
   buffer.clear();
@@ -290,6 +339,10 @@ Deno.test("PartitionedBuffer - Clear resets buffer", () => {
   assertEquals(buffer.getOffset(), 0);
   assertEquals(buffer.getFreeSpace(), 1024);
   assertEquals(buffer.hasPartition("test"), false);
+  assertEquals(buffer.hasPartition("tag_only"), false);
+  assertEquals(buffer.hasPartition(partitionHandle), false);
+  assertEquals(buffer.getPartition(partitionHandle), undefined);
+  assertEquals(handleStorage.partitions.value[0], 0);
 
   // Verify we can add new partitions
   const newSpec: PartitionSpec<TestSchema> = {
@@ -496,6 +549,14 @@ Deno.test("PartitionedBuffer - All TypedArray types", () => {
   }
 });
 
+Deno.test("PartitionedBuffer - tag partition returns null storage", () => {
+  const buffer = new PartitionedBuffer(256, 16);
+  const tag = buffer.addPartition({ name: "alive" });
+  assertEquals(tag, null);
+  assertEquals(buffer.hasPartition("alive"), true);
+  assertEquals(buffer.getPartition("alive"), null);
+});
+
 Deno.test("PartitionedBuffer - Edge cases", () => {
   // Test with maximum safe integer size
   assertThrows(
@@ -552,6 +613,51 @@ Deno.test("PartitionedBuffer - State consistency after errors", () => {
     validPartition.partitions.value[0] = 42;
     assertEquals(validPartition.partitions.value[0], 42);
   }
+});
+
+Deno.test("PartitionedBuffer - State consistency after mutated partition schema errors", () => {
+  const buffer = new PartitionedBuffer(128, 16);
+  const valid = buffer.addPartition<{ value: number }>({
+    name: "valid",
+    schema: { value: Int8Array },
+  });
+  valid.partitions.value[0] = 7;
+  const offsetAfterValid = buffer.getOffset();
+  const freeSpaceAfterValid = buffer.getFreeSpace();
+
+  const invalidConstructorSchema = { value: Int32Array as any };
+  const invalidConstructor = new Partition<{ value: number }>({
+    name: "invalid_constructor",
+    schema: invalidConstructorSchema,
+  });
+  invalidConstructorSchema.value = Array;
+
+  assertThrows(
+    () => buffer.addPartition(invalidConstructor),
+    TypeError,
+    "Invalid type",
+  );
+  assertEquals(buffer.getOffset(), offsetAfterValid);
+  assertEquals(buffer.getFreeSpace(), freeSpaceAfterValid);
+  assertEquals(buffer.hasPartition("invalid_constructor"), false);
+  assertEquals(valid.partitions.value[0], 7);
+
+  const invalidInitialValueSchema = { value: [Uint8Array, 1] as [Uint8ArrayConstructor, number] };
+  const invalidInitialValue = new Partition<{ value: number }>({
+    name: "invalid_initial_value",
+    schema: invalidInitialValueSchema,
+  });
+  invalidInitialValueSchema.value[1] = -1;
+
+  assertThrows(
+    () => buffer.addPartition(invalidInitialValue),
+    TypeError,
+    "Invalid initial value",
+  );
+  assertEquals(buffer.getOffset(), offsetAfterValid);
+  assertEquals(buffer.getFreeSpace(), freeSpaceAfterValid);
+  assertEquals(buffer.hasPartition("invalid_initial_value"), false);
+  assertEquals(valid.partitions.value[0], 7);
 });
 
 Deno.test("PartitionedBuffer - Buffer overflow protection", () => {

@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any no-import-prefix
 /// <reference lib="deno.ns" />
 
-import { assertEquals } from "jsr:@std/assert@^1.0.9";
+import { assertEquals, assertThrows } from "jsr:@std/assert@^1.0.9";
 import { sparseFacade } from "../src/SparseFacade.ts";
 import {
   disposeSparseArray,
@@ -89,6 +89,30 @@ Deno.test("Utils - isValidTypedArrayValue", () => {
   assertEquals(isValidTypedArrayValue(Uint8Array, -1), false);
   assertEquals(isValidTypedArrayValue(Uint8Array, 256), false);
 
+  // Int16Array boundaries
+  assertEquals(isValidTypedArrayValue(Int16Array, -32768), true);
+  assertEquals(isValidTypedArrayValue(Int16Array, 32767), true);
+  assertEquals(isValidTypedArrayValue(Int16Array, -32769), false);
+  assertEquals(isValidTypedArrayValue(Int16Array, 32768), false);
+
+  // Uint16Array boundaries
+  assertEquals(isValidTypedArrayValue(Uint16Array, 0), true);
+  assertEquals(isValidTypedArrayValue(Uint16Array, 65535), true);
+  assertEquals(isValidTypedArrayValue(Uint16Array, -1), false);
+  assertEquals(isValidTypedArrayValue(Uint16Array, 65536), false);
+
+  // Int32Array boundaries
+  assertEquals(isValidTypedArrayValue(Int32Array, -2147483648), true);
+  assertEquals(isValidTypedArrayValue(Int32Array, 2147483647), true);
+  assertEquals(isValidTypedArrayValue(Int32Array, -2147483649), false);
+  assertEquals(isValidTypedArrayValue(Int32Array, 2147483648), false);
+
+  // Uint32Array boundaries
+  assertEquals(isValidTypedArrayValue(Uint32Array, 0), true);
+  assertEquals(isValidTypedArrayValue(Uint32Array, 4294967295), true);
+  assertEquals(isValidTypedArrayValue(Uint32Array, -1), false);
+  assertEquals(isValidTypedArrayValue(Uint32Array, 4294967296), false);
+
   // Float32 - should accept finite numbers within range
   assertEquals(isValidTypedArrayValue(Float32Array, 1.5), true);
   assertEquals(isValidTypedArrayValue(Float32Array, 3.4028234e38), true); // At max
@@ -110,6 +134,15 @@ Deno.test("Utils - isValidTypedArrayValue", () => {
   // Invalid inputs
   assertEquals(isValidTypedArrayValue(Int8Array, NaN), false);
   assertEquals(isValidTypedArrayValue(null as any, 0), false);
+  assertEquals(
+    isValidTypedArrayValue(
+      class CustomArray {
+        static BYTES_PER_ELEMENT = 1;
+      } as any,
+      0,
+    ),
+    false,
+  );
 });
 
 Deno.test("Utils - isUint32", () => {
@@ -158,12 +191,23 @@ Deno.test("Utils - zeroArray", () => {
   const sparse = sparseFacade(dense);
   sparse[10] = 42;
 
-  try {
-    zeroArray(sparse);
-    assertEquals(Array.from(dense), [0, 0, 0]);
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  zeroArray(sparse);
+  assertEquals(Array.from(dense), [0, 0, 0]);
+  assertEquals(sparse[10], undefined);
+});
+
+Deno.test("Utils - zeroArray rethrows unexpected fill errors", () => {
+  const badArray = {
+    fill: () => {
+      throw new Error("fill failed");
+    },
+  };
+
+  assertThrows(
+    () => zeroArray(badArray as any),
+    Error,
+    "fill failed",
+  );
 });
 
 Deno.test("Utils - isNumber", () => {

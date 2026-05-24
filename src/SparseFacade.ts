@@ -1,6 +1,9 @@
 /**
  * @module      SparseFacade
  * @description A SparseFacade is a proxy to a dense TypedArray that allows for sparse storage of values.
+ *
+ * Public sparse UX (bracket access, `delete [-1]`, TypedArray methods on dense storage) is stable.
+ * Prefer `clearSparse()` or `disposeSparseArray()` over magic `delete facade[-1]`.
  * @copyright   2024 the PartitionedBuffer authors. All rights reserved.
  * @license     MIT
  */
@@ -35,17 +38,148 @@ type SparseIndexOptions = {
   maxEntityId?: number;
 };
 
+interface EntityIndex {
+  get(entity: number): number | undefined;
+  ensure(entity: number): number;
+  delete(entity: number): boolean;
+  clear(): void;
+}
+
+class Int32EntityIndex implements EntityIndex {
+  readonly #maxEntityId: number;
+  readonly #sparseArray: Int32Array;
+  readonly #denseToEntity: Int32Array;
+  readonly #available: BitPool;
+
+  constructor(denseLength: number, maxEntityId: number, available: BitPool) {
+    this.#maxEntityId = maxEntityId;
+    this.#available = available;
+    this.#sparseArray = new Int32Array(maxEntityId + 1);
+    this.#sparseArray.fill(NOT_PRESENT);
+    this.#denseToEntity = new Int32Array(denseLength);
+    this.#denseToEntity.fill(NOT_PRESENT);
+  }
+
+  get(entity: number): number | undefined {
+    if (!Number.isSafeInteger(entity) || entity < 0 || entity > this.#maxEntityId) return undefined;
+    const idx = this.#sparseArray[entity] as number;
+    return idx === NOT_PRESENT ? undefined : idx;
+  }
+
+  ensure(entity: number): number {
+    if (!Number.isSafeInteger(entity)) {
+      throw new TypeError(`Entity must be a safe integer, got ${entity}`);
+    }
+    if (entity < 0) {
+      throw new RangeError(`Entity index must be non-negative, got ${entity}`);
+    }
+    if (entity > this.#maxEntityId) {
+      throw new RangeError(`Entity ${entity} out of bounds [0, ${this.#maxEntityId}]`);
+    }
+
+    let idx = this.#sparseArray[entity] as number;
+    if (idx === NOT_PRESENT) {
+      idx = this.#acquireSlot();
+      this.#sparseArray[entity] = idx;
+      this.#denseToEntity[idx] = entity;
+    }
+    return idx;
+  }
+
+  delete(entity: number): boolean {
+    if (!Number.isSafeInteger(entity) || entity < 0 || entity > this.#maxEntityId) return false;
+    const idx = this.#sparseArray[entity] as number;
+    if (idx === NOT_PRESENT) return true;
+    this.#sparseArray[entity] = NOT_PRESENT;
+    this.#denseToEntity[idx] = NOT_PRESENT;
+    this.#available.release(idx);
+    return true;
+  }
+
+  clear(): void {
+    this.#sparseArray.fill(NOT_PRESENT);
+    this.#denseToEntity.fill(NOT_PRESENT);
+    this.#available.clear();
+  }
+
+  #acquireSlot(): number {
+    const idx = this.#available.acquire();
+    if (idx === NOT_PRESENT) {
+      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
+    }
+    return idx;
+  }
+}
+
+class MapEntityIndex implements EntityIndex {
+  readonly #sparseMap = new Map<number, number>();
+  readonly #available: BitPool;
+
+  constructor(available: BitPool) {
+    this.#available = available;
+  }
+
+  get(entity: number): number | undefined {
+    if (!Number.isSafeInteger(entity) || entity < 0) return undefined;
+    const idx = this.#sparseMap.get(entity);
+    return idx === undefined ? undefined : idx;
+  }
+
+  ensure(entity: number): number {
+    if (!Number.isSafeInteger(entity)) {
+      throw new TypeError(`Entity must be a safe integer, got ${entity}`);
+    }
+    if (entity < 0) {
+      throw new RangeError(`Entity index must be non-negative, got ${entity}`);
+    }
+
+    const existing = this.#sparseMap.get(entity);
+    if (existing !== undefined) return existing;
+    const idx = this.#available.acquire();
+    if (idx === NOT_PRESENT) {
+      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
+    }
+    this.#sparseMap.set(entity, idx);
+    return idx;
+  }
+
+  delete(entity: number): boolean {
+    if (!Number.isSafeInteger(entity) || entity < 0) return false;
+    const idx = this.#sparseMap.get(entity);
+    if (idx === undefined) return true;
+    this.#sparseMap.delete(entity);
+    this.#available.release(idx);
+    return true;
+  }
+
+  clear(): void {
+    this.#sparseMap.clear();
+    this.#available.clear();
+  }
+}
+
+function createEntityIndex(
+  denseLength: number,
+  available: BitPool,
+  maxEntityId?: number,
+): EntityIndex {
+  if (maxEntityId !== undefined) {
+    if (!Number.isSafeInteger(maxEntityId) || maxEntityId < 0) {
+      throw new Error("maxEntityId must be a non-negative safe integer");
+    }
+    return new Int32EntityIndex(denseLength, maxEntityId, available);
+  }
+  return new MapEntityIndex(available);
+}
+
 /**
  * Shared entity-to-dense index mapping for sparse facades.
  * Supports zero-allocation mode when maxEntityId is provided.
  */
 export class SparseIndex {
-  readonly #maxEntityId?: number;
+  readonly #entityIndex: EntityIndex;
   readonly #available: BitPool;
   readonly #denseArrays: Set<TypedArray>;
-  readonly #sparseMap?: Map<number, number>;
-  readonly #sparseArray?: Int32Array;
-  readonly #denseToEntity?: Int32Array;
 
   constructor(denseLength: number, options: SparseIndexOptions = {}) {
     if (denseLength === 0) {
@@ -54,22 +188,9 @@ export class SparseIndex {
       throw new Error("Array length exceeds maximum safe BitPool size");
     }
 
-    const { maxEntityId } = options;
-    if (maxEntityId !== undefined) {
-      if (!Number.isSafeInteger(maxEntityId) || maxEntityId < 0) {
-        throw new Error("maxEntityId must be a non-negative safe integer");
-      }
-      this.#maxEntityId = maxEntityId;
-      this.#sparseArray = new Int32Array(maxEntityId + 1);
-      this.#sparseArray.fill(NOT_PRESENT);
-      this.#denseToEntity = new Int32Array(denseLength);
-      this.#denseToEntity.fill(NOT_PRESENT);
-    } else {
-      this.#sparseMap = new Map<number, number>();
-    }
-
     this.#available = new BitPool(denseLength);
     this.#denseArrays = new Set<TypedArray>();
+    this.#entityIndex = createEntityIndex(denseLength, this.#available, options.maxEntityId);
   }
 
   registerDenseArray(dense: TypedArray): void {
@@ -83,85 +204,25 @@ export class SparseIndex {
   }
 
   get(entity: number): number | undefined {
-    if (!Number.isSafeInteger(entity) || entity < 0) return undefined;
-    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) return undefined;
-
-    if (this.#sparseArray) {
-      const idx = this.#sparseArray[entity] as number;
-      return idx === NOT_PRESENT ? undefined : idx;
-    }
-
-    const idx = this.#sparseMap?.get(entity);
-    return idx === undefined ? undefined : idx;
+    return this.#entityIndex.get(entity);
   }
 
   ensure(entity: number): number {
-    if (!Number.isSafeInteger(entity)) {
-      throw new TypeError(`Entity must be a safe integer, got ${entity}`);
-    }
-    if (entity < 0) {
-      throw new RangeError(`Entity index must be non-negative, got ${entity}`);
-    }
-    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) {
-      throw new RangeError(`Entity ${entity} out of bounds [0, ${this.#maxEntityId}]`);
-    }
-
-    if (this.#sparseArray) {
-      let idx = this.#sparseArray[entity] as number;
-      if (idx === NOT_PRESENT) {
-        idx = this.#available.acquire();
-        if (idx === NOT_PRESENT) {
-          throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
-        }
-        this.#sparseArray[entity] = idx;
-        if (this.#denseToEntity) {
-          this.#denseToEntity[idx] = entity;
-        }
-      }
-      return idx;
-    }
-
-    const existing = this.#sparseMap?.get(entity);
-    if (existing !== undefined) return existing;
-    const idx = this.#available.acquire();
-    if (idx === NOT_PRESENT) {
-      throw new RangeError(`Dense storage exhausted (capacity: ${this.#available.size})`);
-    }
-    this.#sparseMap?.set(entity, idx);
-    return idx;
+    return this.#entityIndex.ensure(entity);
   }
 
   delete(entity: number): boolean {
-    if (!Number.isSafeInteger(entity) || entity < 0) return false;
-    if (this.#maxEntityId !== undefined && entity > this.#maxEntityId) return false;
-
-    if (this.#sparseArray) {
-      const idx = this.#sparseArray[entity] as number;
-      if (idx === NOT_PRESENT) return true;
-      this.#sparseArray[entity] = NOT_PRESENT;
-      if (this.#denseToEntity) {
-        this.#denseToEntity[idx] = NOT_PRESENT;
-      }
+    const idx = this.get(entity);
+    const ok = this.#entityIndex.delete(entity);
+    if (!ok) return false;
+    if (idx !== undefined) {
       this.#clearDenseSlot(idx);
-      this.#available.release(idx);
-      return true;
     }
-
-    const idx = this.#sparseMap?.get(entity);
-    if (idx === undefined) return true;
-    this.#sparseMap?.delete(entity);
-    this.#clearDenseSlot(idx);
-    this.#available.release(idx);
     return true;
   }
 
   clear(): void {
-    if (this.#sparseArray) {
-      this.#sparseArray.fill(NOT_PRESENT);
-      this.#denseToEntity?.fill(NOT_PRESENT);
-    }
-    this.#sparseMap?.clear();
-    this.#available.clear();
+    this.#entityIndex.clear();
     for (const dense of this.#denseArrays) {
       dense.fill(0);
     }

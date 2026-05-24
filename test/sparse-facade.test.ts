@@ -2,7 +2,7 @@
 /// <reference lib="deno.ns" />
 
 import { assertEquals, assertThrows } from "jsr:@std/assert@^1.0.9";
-import { sparseFacade } from "../src/SparseFacade.ts";
+import { sparseFacade, SparseIndex } from "../src/SparseFacade.ts";
 
 Deno.test("SparseFacade - Disposal mechanism", () => {
   const dense = new Int32Array([1, 2, 3, 4]);
@@ -64,12 +64,12 @@ Deno.test("SparseFacade - Proxy behavior edge cases", () => {
   const deletedMissing = delete sparse[999];
   assertEquals(deletedMissing, true);
 
-  try {
-    delete sparse[-2];
-    assertEquals(false, true, "Should have thrown");
-  } catch (error) {
-    assertEquals(error instanceof TypeError, true);
-  }
+  assertThrows(
+    () => {
+      delete sparse[-2];
+    },
+    TypeError,
+  );
 });
 
 Deno.test("SparseFacade - BitPool exhaustion", () => {
@@ -102,6 +102,11 @@ Deno.test("SparseFacade - Error conditions", () => {
     () => sparseFacade(new Int32Array(0)),
     Error,
     "Cannot create SparseIndex with zero-length array",
+  );
+  assertThrows(
+    () => new SparseIndex(2 ** 31),
+    Error,
+    "maximum safe BitPool size",
   );
 });
 
@@ -140,6 +145,83 @@ Deno.test("SparseFacade - Explicit sparse helpers mirror bracket access", () => 
 
   assertEquals(sparse.getEntity(20), undefined);
   assertEquals(Array.from(dense), [0, 0, 0, 0]);
+});
+
+Deno.test("SparseFacade - Explicit helpers validate invalid entity ids", () => {
+  const mapSparse = sparseFacade(new Int32Array(2));
+
+  assertEquals(mapSparse.getEntity(-1), undefined);
+  assertEquals(mapSparse.getEntity(1.5), undefined);
+  assertEquals(mapSparse.deleteEntity(-1), false);
+  assertEquals(mapSparse.deleteEntity(1.5), false);
+  assertThrows(
+    () => mapSparse.setEntity(NaN, 1),
+    TypeError,
+    "safe integer",
+  );
+  assertThrows(
+    () => mapSparse.setEntity(-1, 1),
+    RangeError,
+    "non-negative",
+  );
+
+  const zeroSparse = sparseFacade(new Int32Array(2), 10);
+  assertEquals(zeroSparse.getEntity(11), undefined);
+  assertEquals(zeroSparse.deleteEntity(5), true);
+  assertEquals(zeroSparse.deleteEntity(11), false);
+  assertThrows(
+    () => zeroSparse.setEntity(NaN, 1),
+    TypeError,
+    "safe integer",
+  );
+  assertThrows(
+    () => zeroSparse.setEntity(-1, 1),
+    RangeError,
+    "non-negative",
+  );
+  assertThrows(
+    () => zeroSparse.setEntity(11, 1),
+    RangeError,
+    "out of bounds",
+  );
+});
+
+Deno.test("SparseFacade - Shared SparseIndex synchronizes multiple dense arrays", () => {
+  const index = new SparseIndex(2, { maxEntityId: 100 });
+  const xDense = new Int32Array(2);
+  const yDense = new Int32Array(2);
+  const x = sparseFacade(xDense, index);
+  const y = sparseFacade(yDense, index);
+
+  x[42] = 4;
+  y[42] = 8;
+
+  assertEquals(x[42], 4);
+  assertEquals(y[42], 8);
+  assertEquals(Array.from(xDense), [4, 0]);
+  assertEquals(Array.from(yDense), [8, 0]);
+
+  assertEquals(y.deleteEntity(42), true);
+  assertEquals(x[42], undefined);
+  assertEquals(y[42], undefined);
+  assertEquals(Array.from(xDense), [0, 0]);
+  assertEquals(Array.from(yDense), [0, 0]);
+});
+
+Deno.test("SparseFacade - delete trap returns false for non-string keys", () => {
+  const sparse = sparseFacade(new Int32Array(2));
+
+  assertEquals(Reflect.deleteProperty(sparse, Symbol("entity")), false);
+});
+
+Deno.test("SparseFacade - set trap rejects non-string keys", () => {
+  const sparse = sparseFacade(new Int32Array(2));
+
+  assertThrows(
+    () => Reflect.set(sparse, Symbol("entity"), 1),
+    TypeError,
+    "Property key must be a string",
+  );
 });
 
 Deno.test("SparseFacade - Zero-allocation mode with maxEntityId", () => {

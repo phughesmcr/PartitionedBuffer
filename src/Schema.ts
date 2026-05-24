@@ -5,6 +5,7 @@
  * @license     MIT
  */
 
+import { getEntityStride } from "./layout.ts";
 import {
   isObject,
   isTypedArrayConstructor,
@@ -14,8 +15,8 @@ import {
   type TypedArrayConstructor,
 } from "./utils.ts";
 
-/** Minimum alignment in bytes for TypedArrays */
-const MIN_ALIGNMENT = 8;
+export { getEntityStride, getPartitionByteSize, MIN_ALIGNMENT } from "./layout.ts";
+export type { ColumnDescriptor, ColumnLayoutResult } from "./layout.ts";
 
 /**
  * Storage convenience object
@@ -24,8 +25,8 @@ export type SchemaStorage<T> = {
   byteOffset: number;
   byteLength: number;
   partitions: Record<keyof T, TypedArray>;
-  get: T extends SchemaSpec<infer U> ? (partition: keyof U, index: number) => U[keyof U] : never;
-  set: T extends SchemaSpec<infer U> ? (partition: keyof U, index: number, value: U[keyof U]) => void : never;
+  get: (partition: keyof T, index: number) => number | undefined;
+  set: (partition: keyof T, index: number, value: number) => void;
 };
 
 /**
@@ -114,56 +115,12 @@ export const isSchema = (schema: unknown): schema is Schema<SchemaSpec<any>> | n
 };
 
 /**
- * Calculate the aligned size of a single entity in bytes
- * @param schema the schema to calculate the size of
- * @returns the size in bytes for one entity
+ * Per-entity stride in bytes (sum of column element sizes; SoA, no inter-field padding).
+ * @param schema the schema to calculate the stride of
  */
 export function getEntitySize<T extends SchemaSpec<T>>(schema: Schema<T>): number {
   if (!schema || !isSchema(schema)) {
     throw new TypeError("Invalid schema provided to getEntitySize");
   }
-
-  let size = 0;
-  let maxAlignment = 1;
-  const schemaEntries = Object.entries(schema);
-
-  if (schemaEntries.length === 0) return 0;
-
-  // First pass: find maximum alignment requirement
-  for (const [name, value] of schemaEntries) {
-    const Ctr = Array.isArray(value) ? value[0] : value;
-    const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
-
-    // Validate alignment is power of 2
-    if ((alignment & (alignment - 1)) !== 0) {
-      throw new Error(`Invalid alignment ${alignment} for property "${name}"`);
-    }
-
-    maxAlignment = Math.max(maxAlignment, alignment);
-  }
-
-  // Second pass: calculate aligned size
-  for (const [name, value] of schemaEntries) {
-    const Ctr = Array.isArray(value) ? value[0] : value;
-    const alignment = Math.max(Ctr.BYTES_PER_ELEMENT, MIN_ALIGNMENT);
-    const bytes = Ctr.BYTES_PER_ELEMENT;
-
-    // Align current offset
-    const alignedOffset = (size + alignment - 1) & ~(alignment - 1);
-
-    // Check for overflow
-    if (alignedOffset < size || alignedOffset > Number.MAX_SAFE_INTEGER - bytes) {
-      throw new Error(`Size calculation overflow at property "${name}"`);
-    }
-
-    size = alignedOffset + bytes;
-  }
-
-  // Align final size
-  const finalSize = (size + maxAlignment - 1) & ~(maxAlignment - 1);
-  if (finalSize < size) {
-    throw new Error("Final size alignment overflow");
-  }
-
-  return finalSize;
+  return getEntityStride(schema);
 }

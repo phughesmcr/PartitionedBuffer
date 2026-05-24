@@ -3,19 +3,20 @@
   "version": "0.4.0",
   "license": "MIT",
   "exports": "./mod.ts",
+  "lock": true,
   "bench": {
     "include": ["bench/**/*.bench.ts"]
   },
   "compilerOptions": {
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
-    "lib": ["esnext"],
+    "erasableSyntaxOnly": true,
+    "lib": ["es2025"],
+    "module": "esnext",
     "noErrorTruncation": true,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitAny": true,
     "noImplicitOverride": true,
     "noImplicitReturns": true,
-    "noImplicitThis": true,
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
@@ -24,16 +25,50 @@
     "verbatimModuleSyntax": true
   },
   "fmt": {
+    "bracePosition": "sameLine",
     "indentWidth": 2,
     "lineWidth": 120,
+    "newLineKind": "lf",
+    "nextControlFlowPosition": "sameLine",
+    "operatorPosition": "sameLine",
+    "proseWrap": "always",
+    "quoteProps": "consistent",
     "semiColons": true,
     "singleQuote": false,
-    "proseWrap": "always",
+    "trailingCommas": "onlyMultiLine",
+    "useBraces": "whenNotSingleLine",
     "useTabs": false,
-    "exclude": ["*.md", "LICENSE"]
+    "exclude": ["*.md", "**/*.md", "LICENSE"]
+  },
+  "lint": {
+    "rules": {
+      "tags": [
+        "recommended",
+        "jsr"
+      ],
+      "include": [
+        "camelcase",
+        "default-param-last",
+        "explicit-function-return-type",
+        "explicit-module-boundary-types",
+        "no-await-in-loop",
+        "no-await-in-sync-fn",
+        "no-console",
+        "no-const-assign",
+        "no-eval",
+        "no-non-null-asserted-optional-chain",
+        "no-sync-fn-in-async-fn",
+        "no-throw-literal",
+        "no-top-level-await",
+        "no-undef",
+        "no-useless-rename",
+        "prefer-ascii",
+        "single-var-declarator"
+      ]
+    }
   },
   "imports": {
-    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.8.0"
+    "@phughesmcr/bitpool": "jsr:@phughesmcr/bitpool@^0.9.1"
   },
   "tasks": {
     "example": {
@@ -43,9 +78,24 @@
     "prep": {
       "description": "Format, lint, and check the codebase",
       "command": "deno fmt && deno lint && deno check mod.ts src/**/*.ts"
+    },
+    "ci": {
+      "description": "Run prep and tests",
+      "command": "CI=1 deno task prep && deno test"
     }
   },
   "test": {
     "include": ["test/**/*.test.ts"]
+  },
+  "publish": {
+    "exclude": [
+      "example/**",
+      "bench/**",
+      "test/**",
+      ".github/**",
+      ".vscode/**",
+      ".cursor/**",
+      ".claude/**"
+    ]
   }
 }

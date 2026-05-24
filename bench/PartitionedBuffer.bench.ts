@@ -817,12 +817,12 @@ Deno.bench({
   fn: () => {
     const buffer = new PartitionedBuffer(2048, 16);
     type ComplexSchema = {
-      pos_x: number;
-      pos_y: number;
-      pos_z: number;
-      vel_x: number;
-      vel_y: number;
-      vel_z: number;
+      posX: number;
+      posY: number;
+      posZ: number;
+      velX: number;
+      velY: number;
+      velZ: number;
       health: number;
       mana: number;
       level: number;
@@ -831,12 +831,12 @@ Deno.bench({
     const spec: PartitionSpec<ComplexSchema> = {
       name: "complex",
       schema: {
-        pos_x: Float32Array,
-        pos_y: Float32Array,
-        pos_z: Float32Array,
-        vel_x: Float32Array,
-        vel_y: Float32Array,
-        vel_z: Float32Array,
+        posX: Float32Array,
+        posY: Float32Array,
+        posZ: Float32Array,
+        velX: Float32Array,
+        velY: Float32Array,
+        velZ: Float32Array,
         health: [Int16Array, 100],
         mana: [Int16Array, 50],
         level: [Uint8Array, 1],
