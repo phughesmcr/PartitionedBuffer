@@ -1,5 +1,5 @@
 /**
- * @description A convenient way to manage a data in ArrayBuffers.
+ * @description Named typed-array storage in one ArrayBuffer, with dense and sparse entity access.
  * @copyright   2024 the PartitionedBuffer authors. All rights reserved.
  * @license     MIT
  * @module      PartitionedBuffer
@@ -26,7 +26,7 @@ import { isValidName, type TypedArray, type TypedArrayConstructor } from "./src/
 
 /**
  * Partition is a convenient way to define an object in a PartitionedBuffer.
- * PartitionedBuffer is a convenient way to manage a data in ArrayBuffers.
+ * PartitionedBuffer stores named typed-array columns in one ArrayBuffer.
  */
 export { getEntitySize, getPartitionByteSize, isSchema, isValidName, Partition, PartitionedBuffer };
 export type {
