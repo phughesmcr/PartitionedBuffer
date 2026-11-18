@@ -9,7 +9,11 @@ export const isUint32 = (n: number): boolean => {
 /** @returns true if `n` is a Uint32 > 0 */
 export const isPositiveUint32 = (n: number): boolean => isUint32(n) && n > 0;
 
-/** All the various kinds of typed arrays */
+/**
+ * The typed-array column types a schema can use.
+ *
+ * `Float16Array` requires a runtime and TypeScript `lib` (`es2025` or later) that provide it.
+ */
 export type TypedArray =
   | Int8Array
   | Uint8Array
@@ -18,10 +22,11 @@ export type TypedArray =
   | Uint16Array
   | Int32Array
   | Uint32Array
+  | Float16Array
   | Float32Array
   | Float64Array;
 
-/** All the various kinds of typed array constructors */
+/** The typed-array constructors a schema property can use. */
 export type TypedArrayConstructor =
   | Int8ArrayConstructor
   | Uint8ArrayConstructor
@@ -30,6 +35,7 @@ export type TypedArrayConstructor =
   | Uint16ArrayConstructor
   | Int32ArrayConstructor
   | Uint32ArrayConstructor
+  | Float16ArrayConstructor
   | Float32ArrayConstructor
   | Float64ArrayConstructor;
 
@@ -160,6 +166,9 @@ export const isValidTypedArrayValue = (
       return Number.isSafeInteger(value) && isNumberBetween(value, -2147483648, 2147483647);
     case "Uint32Array":
       return Number.isSafeInteger(value) && isNumberBetween(value, 0, 4294967295);
+    case "Float16Array":
+      // Float16 max finite value is 65504
+      return isFinite(value) && Math.abs(value) <= 65504;
     case "Float32Array":
       // Float32 max is approximately 3.4028234663852886e+38
       return isFinite(value) && Math.abs(value) <= 3.4028234e38;

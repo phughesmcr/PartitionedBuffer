@@ -5,37 +5,11 @@
  * @module      PartitionedBuffer
  */
 
-import { alignOffset, getPartitionByteSize, MAX_PARTITION_SIZE, MIN_ALIGNMENT } from "./layout.ts";
+import { MAX_PARTITION_SIZE, MIN_ALIGNMENT } from "./layout.ts";
+import type { BufferLayout } from "./manifest.ts";
 import { Partition, type PartitionSpec, type PartitionStorage } from "./Partition.ts";
-import type { SchemaProperty, SchemaSpec } from "./Schema.ts";
-import { sparseFacade, SparseIndex } from "./SparseFacade.ts";
-import { createSchemaStorage } from "./storage.ts";
-import {
-  isTypedArrayConstructor,
-  isUint32,
-  isValidTypedArrayValue,
-  type TypedArray,
-  type TypedArrayConstructor,
-  zeroArray,
-} from "./utils.ts";
-
-/**
- * Clear all partitions in a buffer
- * @param partition the partition to clear
- * @returns the partition
- * @note Uses for...in to avoid Object.values() allocation
- */
-function clearAllPartitionArrays<T extends SchemaSpec<T>>(
-  partition: PartitionStorage<T> | null,
-): PartitionStorage<T> | null {
-  if (!partition) return null;
-  for (const key in partition.partitions) {
-    if (Object.prototype.hasOwnProperty.call(partition.partitions, key)) {
-      zeroArray(partition.partitions[key as keyof typeof partition.partitions]);
-    }
-  }
-  return partition;
-}
+import { PartitionAllocator, validateBufferSize } from "./PartitionAllocator.ts";
+import type { SchemaSpec } from "./Schema.ts";
 
 /** A PartitionedBuffer is an ArrayBuffer with named storage partitions. */
 export class PartitionedBuffer extends ArrayBuffer {
@@ -48,17 +22,14 @@ export class PartitionedBuffer extends ArrayBuffer {
   /** The maximum possible number of owners per partition */
   readonly maxEntitiesPerPartition: number;
 
-  /** Partition storage keyed by name */
-  readonly #storageByName: Map<string, PartitionStorage<SchemaSpec<unknown>> | null>;
+  /** Allocates partition views over this buffer */
+  readonly #allocator: PartitionAllocator;
 
-  /** Identity fast-path: same Partition instance re-add returns cached storage */
-  readonly #partitionsByInstance: Map<
-    Partition<SchemaSpec<unknown> | null>,
-    PartitionStorage<SchemaSpec<unknown>> | null
-  >;
+  /** The allocator's partition maps, read directly so `hasPartition` stays as fast as a plain field lookup */
+  readonly #storageByName: PartitionAllocator["storageByName"];
 
-  /** The current offset into the underlying ArrayBuffer */
-  #offset: number;
+  /** See `#storageByName` */
+  readonly #partitionsByInstance: PartitionAllocator["partitionsByInstance"];
 
   /**
    * Create a new PartitionedBuffer
@@ -69,119 +40,12 @@ export class PartitionedBuffer extends ArrayBuffer {
    *   or if `size` is not a multiple of `maxEntitiesPerPartition`
    */
   constructor(size: number, maxEntitiesPerPartition: number = size) {
-    if (!isUint32(size)) {
-      throw new SyntaxError("size must be a Uint32 number");
-    } else if (size === 0) {
-      throw new SyntaxError("size must be > 0");
-    }
-
-    if (maxEntitiesPerPartition !== size) {
-      if (!isUint32(maxEntitiesPerPartition)) {
-        throw new SyntaxError("maxEntitiesPerPartition must be a Uint32 number");
-      } else if (size % maxEntitiesPerPartition !== 0) {
-        throw new SyntaxError("size must be a multiple of maxEntitiesPerPartition");
-      }
-    }
-
-    if (maxEntitiesPerPartition < MIN_ALIGNMENT) {
-      throw new SyntaxError(
-        "maxEntitiesPerPartition must be at least 8 to accommodate all possible TypedArray alignments",
-      );
-    }
-
+    validateBufferSize(size, maxEntitiesPerPartition);
     super(size);
-    this.#storageByName = new Map();
-    this.#partitionsByInstance = new Map();
-    this.#offset = 0;
     this.maxEntitiesPerPartition = maxEntitiesPerPartition;
-  }
-
-  #alignOffset(alignment: number): void {
-    try {
-      this.#offset = alignOffset(this.#offset, alignment, this.byteLength);
-    } catch (error) {
-      throw new Error(`Failed to align offset: ${(error as Error).message}`);
-    }
-  }
-
-  #resolvePartitionName(
-    key: string | Partition<SchemaSpec<unknown> | null> | PartitionSpec<SchemaSpec<unknown> | null>,
-  ): string | undefined {
-    if (typeof key === "string") return key;
-    if (key instanceof Partition) return key.name;
-    return key.name;
-  }
-
-  #createPartition<T extends SchemaSpec<T> | null>(
-    [name, value]: [keyof T, SchemaProperty],
-    sharedIndex?: SparseIndex,
-    maxOwners: number | null = null,
-    maxEntityId: number | null = null,
-  ): [keyof T, TypedArray] {
-    this.#validateSchemaEntry(String(name), value);
-
-    const Ctr: TypedArrayConstructor = Array.isArray(value) ? value[0] : value;
-    const initialValue: number = Array.isArray(value) ? value[1] : 0;
-    const bytesPerElement = Ctr.BYTES_PER_ELEMENT;
-    const elements = maxOwners ?? this.maxEntitiesPerPartition;
-    const requiredBytes = elements * bytesPerElement;
-
-    if (requiredBytes > MAX_PARTITION_SIZE) {
-      throw new RangeError(
-        `Partition "${
-          String(name)
-        }" size (${requiredBytes} bytes) exceeds maximum allowed (${MAX_PARTITION_SIZE} bytes)`,
-      );
-    }
-
-    try {
-      this.#alignOffset(bytesPerElement);
-    } catch (error) {
-      throw new Error(`Failed to align partition "${String(name)}": ${(error as Error).message}`);
-    }
-
-    if (this.#offset + requiredBytes > this.byteLength) {
-      const available = this.byteLength - this.#offset;
-      throw new Error(
-        `Buffer overflow: insufficient space for partition "${String(name)}"\n` +
-          `Required: ${requiredBytes} bytes\n` +
-          `Available: ${available} bytes\n` +
-          `Missing: ${requiredBytes - available} bytes`,
-      );
-    }
-
-    let typedArray: TypedArray;
-    try {
-      typedArray = new Ctr(this, this.#offset, elements);
-      typedArray.fill(initialValue);
-    } catch (error) {
-      throw new Error(
-        `Failed to create TypedArray for partition "${String(name)}": ${(error as Error).message}`,
-      );
-    }
-
-    this.#offset += requiredBytes;
-
-    if (maxOwners) {
-      return [name, sparseFacade(typedArray, maxEntityId ?? undefined, sharedIndex)];
-    }
-    return [name, typedArray];
-  }
-
-  #validatePartitionParams<T extends SchemaSpec<T>>(
-    partition: Partition<T>,
-    name: string,
-    maxOwners: number | null,
-  ): void {
-    if (this.#partitionsByInstance.has(partition)) return;
-
-    if (this.#storageByName.has(name)) {
-      throw new Error(`Partition name ${name} already exists`);
-    }
-
-    if (maxOwners !== null && (!Number.isSafeInteger(maxOwners) || maxOwners <= 0)) {
-      throw new Error("maxOwners must be a positive integer or null");
-    }
+    this.#allocator = new PartitionAllocator(this, maxEntitiesPerPartition);
+    this.#storageByName = this.#allocator.storageByName;
+    this.#partitionsByInstance = this.#allocator.partitionsByInstance;
   }
 
   /**
@@ -194,47 +58,7 @@ export class PartitionedBuffer extends ArrayBuffer {
   addPartition<T extends SchemaSpec<T> | null = null>(
     specOrPartition: PartitionSpec<T> | Partition<T>,
   ): PartitionStorage<T> {
-    const partition = specOrPartition instanceof Partition ? specOrPartition : new Partition(specOrPartition);
-    const { name, schema = null, maxOwners = null, maxEntityId = null } = partition;
-
-    if (this.#partitionsByInstance.has(partition)) {
-      return this.#partitionsByInstance.get(partition) as PartitionStorage<T>;
-    }
-
-    this.#validatePartitionParams(partition, name, maxOwners);
-
-    if (!schema) {
-      this.#partitionsByInstance.set(partition, null);
-      this.#storageByName.set(name, null);
-      return null as PartitionStorage<T>;
-    }
-
-    const rowCount = maxOwners ?? this.maxEntitiesPerPartition;
-    const alignedSize = getPartitionByteSize(schema, rowCount);
-    if (alignedSize > this.getFreeSpace()) {
-      const required = alignedSize - this.getFreeSpace();
-      const hint = `(Size: ${alignedSize}; Available: ${this.getFreeSpace()}; Required: ${required})`;
-      throw new Error(`Not enough free space to add partition ${name} ${hint}`);
-    }
-
-    const startOffset = this.#offset;
-    const schemaEntries = Object.entries(schema) as [keyof T, SchemaProperty][];
-    const sharedIndex = maxOwners ? new SparseIndex(maxOwners, { maxEntityId: maxEntityId ?? undefined }) : undefined;
-    const partitions = Object.fromEntries(
-      schemaEntries.map((entry) => this.#createPartition(entry, sharedIndex, maxOwners, maxEntityId)),
-    ) as Record<keyof T, TypedArray>;
-
-    const result = createSchemaStorage<T>({
-      byteLength: alignedSize,
-      byteOffset: startOffset,
-      partitions,
-      mode: maxOwners ? "sparse" : "dense",
-    });
-
-    this.#partitionsByInstance.set(partition, result);
-    this.#storageByName.set(name, result);
-
-    return result as PartitionStorage<T>;
+    return this.#allocator.addPartition(specOrPartition);
   }
 
   /**
@@ -245,18 +69,29 @@ export class PartitionedBuffer extends ArrayBuffer {
    * Add partitions again and retrieve fresh handles after calling clear().
    */
   clear(): this {
-    for (const storage of this.#storageByName.values()) {
-      clearAllPartitionArrays(storage);
-    }
-    this.#partitionsByInstance.clear();
-    this.#storageByName.clear();
-    this.#offset = 0;
+    this.#allocator.clear();
     return this;
   }
 
   /** The amount of free space in bytes in the underlying ArrayBuffer */
   getFreeSpace(): number {
-    return this.byteLength - this.#offset;
+    return this.#allocator.getFreeSpace();
+  }
+
+  /**
+   * Describe where each partition's columns live in the buffer.
+   *
+   * The result is plain, structured-cloneable data. Pass it with a copy of this buffer's bytes
+   * to `createPartitionViews` to rebuild the dense views elsewhere. To share live memory between
+   * threads, use `SharedPartitionedBuffer` instead.
+   * @returns a snapshot of the current layout; it does not update when partitions are added
+   */
+  getLayout(): BufferLayout {
+    return {
+      byteLength: this.byteLength,
+      maxEntitiesPerPartition: this.maxEntitiesPerPartition,
+      partitions: this.#allocator.getLayout(),
+    };
   }
 
   /**
@@ -268,20 +103,12 @@ export class PartitionedBuffer extends ArrayBuffer {
   getPartition<T extends SchemaSpec<T> | null = null>(
     key: PartitionSpec<T> | Partition<T> | string,
   ): PartitionStorage<T> | undefined {
-    if (!key) {
-      throw new TypeError("key must be a string or PartitionSpec");
-    }
-    const name = this.#resolvePartitionName(key);
-    if (key instanceof Partition) {
-      const byInstance = this.#partitionsByInstance.get(key);
-      if (byInstance !== undefined) return byInstance as PartitionStorage<T>;
-    }
-    return this.#storageByName.get(name!) as PartitionStorage<T> | undefined;
+    return this.#allocator.getPartition(key);
   }
 
   /** Get the current offset into the underlying ArrayBuffer */
   getOffset(): number {
-    return this.#offset;
+    return this.#allocator.getOffset();
   }
 
   /**
@@ -298,22 +125,6 @@ export class PartitionedBuffer extends ArrayBuffer {
     if (key instanceof Partition) {
       return this.#partitionsByInstance.has(key);
     }
-    const name = this.#resolvePartitionName(key);
-    return this.#storageByName.has(name!);
-  }
-
-  #validateSchemaEntry(name: string, value: SchemaProperty): void {
-    const Ctr = Array.isArray(value) ? value[0] : value;
-    const initialValue = Array.isArray(value) ? value[1] : 0;
-
-    if (!isTypedArrayConstructor(Ctr)) {
-      throw new TypeError(`Invalid type for schema property "${String(name)}"`);
-    }
-
-    if (Array.isArray(value) && !isValidTypedArrayValue(Ctr, initialValue)) {
-      throw new TypeError(
-        `Invalid initial value ${initialValue} for schema property "${String(name)}" of type ${Ctr.name}`,
-      );
-    }
+    return this.#storageByName.has(typeof key === "string" ? key : key.name);
   }
 }

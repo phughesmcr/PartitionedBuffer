@@ -64,6 +64,7 @@ Deno.test("Utils - isTypedArrayConstructor", () => {
   assertEquals(isTypedArrayConstructor(Int32Array), true);
   assertEquals(isTypedArrayConstructor(Uint32Array), true);
   assertEquals(isTypedArrayConstructor(Float32Array), true);
+  assertEquals(isTypedArrayConstructor(Float16Array), true);
   assertEquals(isTypedArrayConstructor(Float64Array), true);
 
   // Invalid constructors
@@ -122,6 +123,19 @@ Deno.test("Utils - isValidTypedArrayValue", () => {
   assertEquals(isValidTypedArrayValue(Float32Array, Infinity), false);
   assertEquals(isValidTypedArrayValue(Float32Array, -Infinity), false);
   assertEquals(isValidTypedArrayValue(Float32Array, NaN), false);
+
+  // Float16 - should accept finite numbers within +/-65504
+  assertEquals(isValidTypedArrayValue(Float16Array, 1.5), true);
+  assertEquals(isValidTypedArrayValue(Float16Array, 0.1), true); // Rounded on storage, still valid
+  assertEquals(isValidTypedArrayValue(Float16Array, -0), true);
+  assertEquals(isValidTypedArrayValue(Float16Array, 65504), true); // At max
+  assertEquals(isValidTypedArrayValue(Float16Array, -65504), true); // At min
+  assertEquals(isValidTypedArrayValue(Float16Array, 65505), false); // Too large
+  assertEquals(isValidTypedArrayValue(Float16Array, 65520), false); // Would round to Infinity
+  assertEquals(isValidTypedArrayValue(Float16Array, -65505), false); // Too small
+  assertEquals(isValidTypedArrayValue(Float16Array, Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float16Array, -Infinity), false);
+  assertEquals(isValidTypedArrayValue(Float16Array, NaN), false);
 
   // Float64 - should accept any finite number
   assertEquals(isValidTypedArrayValue(Float64Array, Number.MAX_VALUE), true);
@@ -311,6 +325,7 @@ Deno.test("Utils - isTypedArray", () => {
   assertEquals(isTypedArray(new Int32Array()), true);
   assertEquals(isTypedArray(new Uint32Array()), true);
   assertEquals(isTypedArray(new Float32Array()), true);
+  assertEquals(isTypedArray(new Float16Array()), true);
   assertEquals(isTypedArray(new Float64Array()), true);
 
   // Invalid arrays/objects
