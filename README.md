@@ -11,8 +11,9 @@ to choose numeric types and allocate storage up front.
 
 - Dense partitions expose typed-array views indexed by slot.
 - Sparse partitions map entity IDs to a fixed number of stored owners.
-- Schemas support mixed numeric types and initial values.
+- Schemas support mixed numeric types, including `Float16Array`, and initial values.
 - Sizing helpers account for column alignment.
+- `SharedPartitionedBuffer` puts the columns in a `SharedArrayBuffer` so workers can use them.
 
 See the [API reference on JSR](https://jsr.io/@phughesmcr/partitionedbuffer/doc) for all exported classes, types and helpers.
 
@@ -117,6 +118,68 @@ Map and support non-negative safe integer entity IDs. Sparse index structures
 are allocated separately from the buffer's numeric columns. `maxOwners` limits
 the number of simultaneously stored entities; `maxEntityId` is the largest
 allowed entity ID, inclusive.
+
+## Sharing columns with workers
+
+`SharedPartitionedBuffer` has the same partition API as `PartitionedBuffer`,
+but its columns are views over a `SharedArrayBuffer` in its `buffer` property.
+It does not extend `ArrayBuffer`. Send `buffer` and the plain-data layout from
+`getLayout()` to a worker, and rebuild the views there with
+`createPartitionViews`:
+
+```ts
+// main.ts
+import { SharedPartitionedBuffer } from "@phughesmcr/partitionedbuffer";
+
+type Vec2 = { x: number; y: number };
+const shared = new SharedPartitionedBuffer(1024, 64);
+const position = shared.addPartition<Vec2>({
+  name: "position",
+  schema: { x: Float32Array, y: Float32Array },
+});
+
+const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+worker.onmessage = () => console.log(position.partitions.x[1]); // 2
+worker.postMessage({ buffer: shared.buffer, layout: shared.getLayout() });
+```
+
+```ts
+// worker.ts
+import { type BufferLayout, createPartitionViews } from "@phughesmcr/partitionedbuffer";
+
+// Names the partitions and columns this worker expects; it is not checked at runtime.
+type Views = { position: { x: Float32Array; y: Float32Array } };
+
+self.onmessage = (event: MessageEvent<{ buffer: SharedArrayBuffer; layout: BufferLayout }>) => {
+  const { position } = createPartitionViews<Views>(event.data.buffer, event.data.layout);
+  for (let i = 0; i < position.x.length; i++) position.x[i] = i * 2;
+  self.postMessage("done");
+};
+```
+
+The layout lists each partition with storage: its name, `mode` (`"dense"` or
+`"sparse"`), `byteOffset`, `byteLength`, `rowCount`, and each column's name,
+typed-array `type` name, `byteOffset` and `length`. It is a snapshot, so send a
+new one after adding partitions. `PartitionedBuffer` has `getLayout()` too, for
+rebuilding views over a copy of its bytes.
+
+Limits:
+
+- Browsers expose `SharedArrayBuffer` only on cross-origin isolated pages
+  (`Cross-Origin-Opener-Policy: same-origin` plus
+  `Cross-Origin-Embedder-Policy: require-corp` or `credentialless`). Check
+  `SharedPartitionedBuffer.isSupported()` and fall back to `PartitionedBuffer`.
+  Importing the package is safe either way.
+- Only numeric columns are shared. A sparse partition's entity-to-slot index
+  stays on the thread that created it, so `createPartitionViews` skips sparse
+  partitions unless you pass `{ includeSparse: true }`, and then indexes them
+  by owner slot, not entity ID.
+- Call `addPartition` and `clear` only while no other thread is using the
+  memory. Other threads' views are not updated.
+- Typed-array writes are not atomic. Give each thread its own rows or columns,
+  and synchronise with `postMessage` or `Atomics` before reading another
+  thread's writes. `Atomics` works on the `Int32Array` columns.
+- The buffer has a fixed size; it is not growable.
 
 ## Sizing and lifecycle
 

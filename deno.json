@@ -85,7 +85,7 @@
     },
     "ci": {
       "description": "Run prep and tests",
-      "command": "CI=1 deno task prep && deno test && deno task check:docs"
+      "command": "CI=1 deno task prep && deno test --allow-read=. && deno task check:docs"
     }
   },
   "test": {
