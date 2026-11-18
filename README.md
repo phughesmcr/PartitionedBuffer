@@ -59,6 +59,30 @@ console.log(position.get("x", 0)); // 1
 console.log(buffer.getFreeSpace()); // 512 bytes
 ```
 
+## Column types
+
+Schema properties can use any of these typed-array constructors: `Int8Array`,
+`Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`, `Int32Array`,
+`Uint32Array`, `Float16Array`, `Float32Array` and `Float64Array`. Use a
+`[Constructor, initialValue]` tuple to fill a column with a starting value. The
+initial value must be finite and in range for the type.
+
+`Float16Array` columns use 2 bytes per entity and hold IEEE half-precision
+values: about 3 significant decimal digits, a finite range of ±65504, and a
+smallest normal value of about 6.1e-5. Values are rounded on write as
+`Math.f16round` does, and finite values beyond the range become `±Infinity`.
+`Float16Array` needs a runtime that provides it (Baseline 2025: Chrome 135+,
+Firefox 129+, Safari 18.2+, Node 24+, and current Deno and Bun). TypeScript
+users need a `lib` that declares it, such as `es2025` or `esnext`.
+
+```ts
+type Particle = { life: number };
+const particles = buffer.addPartition<Particle>({
+  name: "particles",
+  schema: { life: [Float16Array, 1] },
+});
+```
+
 ## Dense and sparse partitions
 
 By default, partition arrays are dense typed-array views. The index is the slot

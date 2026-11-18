@@ -523,6 +523,7 @@ Deno.test("PartitionedBuffer - All TypedArray types", () => {
     { name: "uint16", constructor: Uint16Array, testValue: 50000 },
     { name: "int32", constructor: Int32Array, testValue: -1000000 },
     { name: "uint32", constructor: Uint32Array, testValue: 3000000000 },
+    { name: "float16", constructor: Float16Array, testValue: 3.14159 },
     { name: "float32", constructor: Float32Array, testValue: 3.14159 },
     { name: "float64", constructor: Float64Array, testValue: Math.PI },
   ];
@@ -540,6 +541,8 @@ Deno.test("PartitionedBuffer - All TypedArray types", () => {
 
       if (constructor === Uint8ClampedArray) {
         assertEquals(storedValue, 255);
+      } else if (constructor === Float16Array) {
+        assertEquals(storedValue, Math.f16round(testValue));
       } else if (constructor === Float32Array) {
         assertEquals(Math.abs(storedValue - testValue) < 0.001, true);
       } else {
